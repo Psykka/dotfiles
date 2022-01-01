@@ -4,7 +4,7 @@
 
 # terminal emulator
 super + Return
-	xfce4-terminal
+	~/.local/kitty.app/bin/kitty
 
 # program launcher
 super + @space
