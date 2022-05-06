@@ -7,7 +7,7 @@ while pgrep -u $UID -x polybar > /dev/null; do sleep 1; done
 polybar main &
 pgrep -x sxhkd > /dev/null || sxhkd &
 setxkbmap -model abnt2 -layout br &
-picom &
+	picom &
 ~/.fehbg &
 
 bspc monitor -d I II III IV V
@@ -21,3 +21,6 @@ bspc config gapless_monocle      true
 
 bspc rule -a discord desktop='^5'
 bspc rule -a firefox desktop='^1'
+
+
+
