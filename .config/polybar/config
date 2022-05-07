@@ -40,6 +40,7 @@ font-1 = FontAwesome5Brands:style=Solid:size=10;1
 font-2 = fixed:pixelsize=10;0
 font-3 = unifont:fontformat=truetype:size=8:antialias=false;0
 font-4 = siji:pixelsize=10;0
+font-5 = SourceHanSerifJP:size=10:style=Medium;1
 
 modules-left = bspwm
 modules-right = spotify filesystem pulseaudio memory cpu date powermenu
