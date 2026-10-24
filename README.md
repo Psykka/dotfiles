@@ -16,6 +16,13 @@ Colors live in `themes/dark.ini`; after editing it, run `theme` to apply.
 
 `Super + /` shows all keybindings.
 
+## Credits
+
+Wallpaper: "The Edge of Two Worlds", taken by the Artemis II crew.
+Image Credit: NASA ([source](https://www.nasa.gov/image-detail/amf-art002e009285/)).
+Details in [`wallpapers/.local/share/wallpapers/CREDITS.md`](wallpapers/.local/share/wallpapers/CREDITS.md).
+
 ## License
 
-Copyright © 2026 Psykka. Distributed under the [GorillaPL](LICENSE) 🦍.
+Copyright © 2026 Psykka. Distributed under the [GorillaPL](LICENSE) 🦍,
+except the wallpaper, a NASA image (see Credits).

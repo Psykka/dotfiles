@@ -9,7 +9,7 @@ set -eu
 
 cd "$(dirname "$0")"
 REPO=$(pwd)
-STOW_PACKAGES="sway waybar mako fuzzel swaylock alacritty gtk fonts keyboard spotify bin"
+STOW_PACKAGES="sway waybar mako fuzzel swaylock alacritty gtk fonts keyboard spotify bin wallpapers"
 
 say() { printf '\n\033[1m==> %s\033[0m\n' "$*"; }
 
