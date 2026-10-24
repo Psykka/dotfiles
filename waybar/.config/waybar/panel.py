@@ -37,6 +37,7 @@ ICON = {
     "prev": "", "next": "", "volume": "", "muted": "",
     "mic": "", "mic-off": "", "lock": "", "logout": "",
     "reboot": "", "power": "", "keyboard": "",
+    "down": "\uf078", "right": "\uf054", "check": "\uf00c",
 }
 
 CSS = b"""
@@ -65,6 +66,12 @@ button {
 }
 button:hover { background: @line; color: @hi; }
 button.yes { background: @accent; color: @bg0; }
+button.tile { background: @bg2; padding: 12px 0; }
+button.device { background: @bg2; padding: 8px 12px; }
+button.device:hover { background: @line; }
+.device-title { color: @hi; }
+button.tile:hover { background: @line; }
+.tile .icon { font-size: 16px; }
 button.small { padding: 2px 8px; font-size: 11px; color: @mute; }
 button.small:hover { color: @hi; }
 button.small:disabled { color: @faint; background: transparent; }
@@ -106,11 +113,6 @@ scale slider {
     margin: -4px;
 }
 
-combobox button, combobox box {
-    background: @bg2;
-    border: none;
-    box-shadow: none;
-}
 
 .notif { background: @bg2; border-radius: 4px; padding: 8px 10px; }
 
@@ -461,13 +463,25 @@ class Calendar(Gtk.Box):
 # ---------------------------------------------------------- general menu
 
 def devices(kind):
-    """[(name, description)] for 'sinks' or 'sources', without monitors."""
+    """[(name, title, subtitle)] for 'sinks' or 'sources', without monitors.
+
+    The full description is often huge ("ES1371/ES1373 / Creative Labs
+    CT2518 (...)"), so the title is the device's short nick and the
+    subtitle its active port ("Analog Output", "Headphones")."""
     try:
         items = json.loads(run("pactl", "--format=json", "list", kind) or "[]")
     except json.JSONDecodeError:
         return []
-    return [(d["name"], d.get("description") or d["name"]) for d in items
-            if not d["name"].endswith(".monitor")]
+    out = []
+    for d in items:
+        if d["name"].endswith(".monitor"):
+            continue
+        props = d.get("properties", {})
+        title = props.get("device.nick") or props.get("alsa.card_name") or d.get("description") or d["name"]
+        port = next((x.get("description", "") for x in d.get("ports", [])
+                     if x.get("name") == d.get("active_port")), "")
+        out.append((d["name"], title, port or props.get("device.profile.description", "")))
+    return out
 
 
 class AudioRow(Gtk.Box):
@@ -480,20 +494,62 @@ class AudioRow(Gtk.Box):
         target = f"@DEFAULT_{kind.upper()}@"
         self.pack_start(label(heading, ["heading"]), False, False, 0)
 
-        combo = Gtk.ComboBoxText()
-        cell = combo.get_cells()[0]
-        cell.set_property("ellipsize", Pango.EllipsizeMode.END)
-        cell.set_property("width-chars", 30)
-        default = run("pactl", f"get-default-{kind}")
-        for name, desc in devices(kind + "s"):
-            combo.append(name, desc)
-        combo.set_active_id(default)
-        combo.connect("changed", lambda c: run("pactl", f"set-default-{kind}", c.get_active_id()) or self.refresh())
-        self.pack_start(combo, False, False, 0)
+        # Current device; clicking opens the list of devices below it
+        self.devices = devices(kind + "s")
+        picker = Gtk.Button()
+        picker.get_style_context().add_class("device")
+        row = Gtk.Box(spacing=8)
+        names = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        self.title = label(css=["device-title"], ellipsize=True)
+        self.subtitle = label(css=["muted", "small"], ellipsize=True)
+        names.pack_start(self.title, False, False, 0)
+        names.pack_start(self.subtitle, False, False, 0)
+        row.pack_start(names, True, True, 0)
+        self.chevron = label(ICON["right"], ["icon", "muted"], xalign=1.0)
+        row.pack_end(self.chevron, False, False, 0)
+        picker.add(row)
+        picker.connect("clicked", lambda _: self.toggle_list())
+        self.pack_start(picker, False, False, 0)
+
+        self.list = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+        self.revealer = Gtk.Revealer(transition_type=Gtk.RevealerTransitionType.SLIDE_DOWN,
+                                     transition_duration=200)
+        self.revealer.add(self.list)
+        self.pack_start(self.revealer, False, False, 0)
+        self.show_device()
 
         self.pill = Pill(icon_on, lambda v: run("pactl", f"set-{kind}-volume", target, f"{int(v)}%"),
                          lambda: run("pactl", f"set-{kind}-mute", target, "toggle") or self.refresh())
         self.pack_start(self.pill, False, False, 0)
+        self.refresh()
+
+    def show_device(self):
+        default = run("pactl", f"get-default-{self.kind}")
+        current = next((d for d in self.devices if d[0] == default), (default, default, ""))
+        self.title.set_text(current[1])
+        self.subtitle.set_text(current[2])
+        for c in self.list.get_children():
+            self.list.remove(c)
+        for name, title, subtitle in self.devices:
+            b = Gtk.Button()
+            row = Gtk.Box(spacing=10)
+            mark = label(ICON["check"] if name == default else "", ["icon"], xalign=0.5, width=2)
+            row.pack_start(mark, False, False, 0)
+            row.pack_start(label(f"{title} · {subtitle}" if subtitle else title, ellipsize=True), True, True, 0)
+            b.add(row)
+            b.connect("clicked", lambda _, n=name: self.pick(n))
+            self.list.pack_start(b, False, False, 0)
+        self.list.show_all()
+
+    def toggle_list(self):
+        opening = not self.revealer.get_reveal_child()
+        self.revealer.set_reveal_child(opening)
+        self.chevron.set_text(ICON["down" if opening else "right"])
+
+    def pick(self, name):
+        run("pactl", f"set-default-{self.kind}", name)
+        self.show_device()
+        self.toggle_list()
         self.refresh()
 
     def refresh(self):
@@ -504,11 +560,12 @@ class AudioRow(Gtk.Box):
 
 
 class Menu(Gtk.Box):
+    # (icon, tile label, confirmation, command)
     POWER = [
-        ("lock", "Lock", ["swaylock", "-f"]),
-        ("logout", "Log out", ["swaymsg", "exit"]),
-        ("reboot", "Reboot", ["systemctl", "reboot"]),
-        ("power", "Power off", ["systemctl", "poweroff"]),
+        ("lock", "Lock", "Lock", ["swaylock", "-f"]),
+        ("logout", "Log out", "Log out", ["swaymsg", "exit"]),
+        ("reboot", "Reboot", "Reboot", ["systemctl", "reboot"]),
+        ("power", "Off", "Power off", ["systemctl", "poweroff"]),
     ]
 
     def __init__(self):
@@ -525,12 +582,35 @@ class Menu(Gtk.Box):
         buttons.pack_start(label("SYSTEM", ["heading"]), False, False, 4)
         buttons.pack_start(icon_button("keyboard", "Keybindings", lambda: self.run_and_quit(
             [os.path.expanduser("~/.config/sway/keys.sh")])), False, False, 0)
-        for icon, text, cmd in self.POWER:
-            buttons.pack_start(icon_button(icon, text, lambda t=text, c=cmd: self.confirm(t, c)), False, False, 0)
+
+        # "Power" opens a row of tiles below it
+        power = icon_button("power", "Power", self.toggle_power)
+        self.chevron = label(ICON["right"], ["icon", "muted"], xalign=1.0)
+        power.get_child().pack_end(self.chevron, True, True, 0)
+        buttons.pack_start(power, False, False, 0)
+        tiles = Gtk.Box(spacing=6, homogeneous=True, margin_top=6)
+        for icon, text, question, cmd in self.POWER:
+            tile = Gtk.Button()
+            tile.get_style_context().add_class("tile")
+            inner = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+            inner.pack_start(label(ICON[icon], ["icon"], xalign=0.5), False, False, 0)
+            inner.pack_start(label(text, ["small"], xalign=0.5), False, False, 0)
+            tile.add(inner)
+            tile.connect("clicked", lambda _, q=question, c=cmd: self.confirm(q, c))
+            tiles.pack_start(tile, True, True, 0)
+        self.revealer = Gtk.Revealer(transition_type=Gtk.RevealerTransitionType.SLIDE_DOWN,
+                                     transition_duration=200)
+        self.revealer.add(tiles)
+        buttons.pack_start(self.revealer, False, False, 0)
         self.stack.add_named(buttons, "buttons")
         self.confirm_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
         self.stack.add_named(self.confirm_box, "confirm")
         self.pack_start(self.stack, False, False, 0)
+
+    def toggle_power(self):
+        opening = not self.revealer.get_reveal_child()
+        self.revealer.set_reveal_child(opening)
+        self.chevron.set_text(ICON["down" if opening else "right"])
 
     def confirm(self, text, cmd):
         for c in self.confirm_box.get_children():
