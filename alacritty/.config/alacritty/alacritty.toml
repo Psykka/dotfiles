@@ -1,0 +1,9 @@
+[env]
+WINIT_UNIX_BACKEND = "wayland"
+
+[window]
+dynamic_title = true
+padding = { x = 14, y = 10 }
+dynamic_padding = true
+
+[terminal]
