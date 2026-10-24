@@ -1,3 +1,7 @@
+[general]
+# Colors come from the palette (`theme`)
+import = ["~/.config/alacritty/colors.toml"]
+
 [env]
 WINIT_UNIX_BACKEND = "wayland"
 
@@ -11,36 +15,3 @@ dynamic_padding = true
 [font]
 normal = { family = "JetBrains Mono" }
 size = 11
-
-# Monochrome, with desaturated ANSI colors so tools stay readable
-[colors.primary]
-background = "#121212"
-foreground = "#d0d0d0"
-
-[colors.cursor]
-text = "#121212"
-cursor = "#d0d0d0"
-
-[colors.selection]
-text = "#121212"
-background = "#d0d0d0"
-
-[colors.normal]
-black = "#262626"
-red = "#b56b6b"
-green = "#8fa58f"
-yellow = "#b5a77a"
-blue = "#7f8fa6"
-magenta = "#a08aa6"
-cyan = "#8aa6a6"
-white = "#d0d0d0"
-
-[colors.bright]
-black = "#555555"
-red = "#c98a8a"
-green = "#a8bca8"
-yellow = "#c9bd95"
-blue = "#9aa8bb"
-magenta = "#b6a3bb"
-cyan = "#a3bbbb"
-white = "#ffffff"

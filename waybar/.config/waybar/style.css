@@ -1,3 +1,6 @@
+/* Colors come from the palette (`theme`) */
+@import "colors.css";
+
 * {
     font-family: "JetBrains Mono", "Font Awesome 6 Free", "Font Awesome 6 Brands", monospace;
     font-size: 13px;
@@ -9,28 +12,28 @@
 }
 
 window#waybar {
-    background: #121212;
-    color: #d0d0d0;
+    background: @bg0;
+    color: @fg;
 }
 
 #workspaces button {
     padding: 0 8px;
     background: transparent;
-    color: #777777;
+    color: @mute;
 }
-#workspaces button:hover { background: #222222; }
-#workspaces button.focused { color: #ffffff; }
+#workspaces button:hover { background: @bg2; }
+#workspaces button.focused { color: @hi; }
 #workspaces button.urgent {
-    background: #e8e8e8;
-    color: #121212;
+    background: @accent;
+    color: @bg0;
 }
 
 /* Media is centered between the workspaces and the clock */
 #mpris {
     padding: 0 12px;
-    color: #d0d0d0;
+    color: @fg;
 }
-#mpris.paused { color: #777777; }
+#mpris.paused { color: @mute; }
 
 #clock { padding: 0 10px 0 6px; }
 
@@ -38,7 +41,7 @@ window#waybar {
 
 #custom-menu {
     padding: 0 12px;
-    color: #ffffff;
+    color: @hi;
 }
 
-#mpris:hover, #clock:hover, #custom-menu:hover { background: #222222; }
+#mpris:hover, #clock:hover, #custom-menu:hover { background: @bg2; }

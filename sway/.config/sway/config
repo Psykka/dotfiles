@@ -8,8 +8,13 @@ bindsym $mod+Return exec alacritty
 # Launcher
 bindsym $mod+space exec fuzzel
 
-# Screenshot (full screen) to ~/Pictures/Screenshots
-bindsym Print exec mkdir -p ~/Pictures/Screenshots && grim ~/Pictures/Screenshots/$(date +'%Y-%m-%d_%H-%M-%S').png
+# Screenshot: saved to ~/Pictures/Screenshots and copied to the clipboard
+bindsym Print exec ~/.config/sway/screenshot.sh screen
+bindsym Shift+Print exec ~/.config/sway/screenshot.sh area
+bindsym $mod+Shift+s exec ~/.config/sway/screenshot.sh area
+
+# Clipboard history
+bindsym $mod+v exec cliphist list | fuzzel --dmenu -p "clipboard ❯ " | cliphist decode | wl-copy
 
 # Keybindings: list and run
 bindsym $mod+slash exec ~/.config/sway/keys.sh
@@ -41,14 +46,11 @@ bindsym $mod+Shift+4 move container to workspace number 4
 bindsym $mod+Shift+5 move container to workspace number 5
 bindsym $mod+Shift+6 move container to workspace number 6
 
-# Background
-output * bg #181818 solid_color
-
 # Reload config
 bindsym $mod+Shift+r reload
 
-# Polkit agent (password prompt)
-exec /usr/libexec/polkit-mate-authentication-agent-1
+# Polkit agent (password prompt); its path differs between distros
+exec sh -c 'for a in /usr/libexec/polkit-mate-authentication-agent-1 /usr/lib/mate-polkit/polkit-mate-authentication-agent-1; do [ -x "$a" ] && exec "$a"; done'
 
 # Lock: Super+L, or automatically after 20 min (never suspends)
 bindsym $mod+l exec swaylock -f
@@ -70,23 +72,29 @@ include /etc/sway/config.d/*
 default_border pixel 2
 default_floating_border pixel 2
 smart_borders off
-corner_radius 6
 gaps inner 8
 gaps outer 4
 smart_gaps off
 
-# Border colors: only the focused window shows one; the rest match
-# the background color so they disappear
-#                              border  bg      text    indicator child_border
-client.focused                 #e8e8e8 #121212 #ffffff #e8e8e8   #e8e8e8
-client.focused_inactive        #181818 #121212 #777777 #181818   #181818
-client.unfocused               #181818 #121212 #777777 #181818   #181818
-client.urgent                  #181818 #121212 #777777 #181818   #181818
+# Colors, background and SwayFX effects come from the palette
+# (~/dotfiles/themes, applied with `theme dark|light|toggle`)
+include ~/.config/sway/colors
+include ~/.config/sway/fx.d/*
 
-# Dark theme and fonts for GTK apps (Firefox and portals read these)
-exec_always gsettings set org.gnome.desktop.interface color-scheme prefer-dark && gsettings set org.gnome.desktop.interface gtk-theme Adwaita-dark && gsettings set org.gnome.desktop.interface font-name 'Inter 10' && gsettings set org.gnome.desktop.interface monospace-font-name 'JetBrains Mono 10'
+# Fonts for GTK apps (Firefox and portals read these)
+exec_always gsettings set org.gnome.desktop.interface font-name 'Inter 10' && gsettings set org.gnome.desktop.interface monospace-font-name 'JetBrains Mono 10'
 
-# Bar, notifications and media tracking (Waybar, mako, playerctld)
+# Bar, notifications, media tracking and clipboard history
 exec waybar
 exec mako
 exec playerctld daemon
+exec wl-paste --watch cliphist store
+
+# Dialogs and small tool windows float, centered
+for_window [window_type="dialog"] floating enable
+for_window [window_role="dialog"] floating enable
+for_window [window_role="pop-up"] floating enable
+for_window [app_id="polkit-mate-authentication-agent-1"] floating enable
+for_window [app_id="xdg-desktop-portal-gtk"] floating enable
+for_window [app_id="org.pulseaudio.pavucontrol"] floating enable
+for_window [title="^Picture-in-Picture$"] floating enable, sticky enable

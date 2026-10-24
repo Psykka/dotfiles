@@ -1,12 +1,7 @@
 /* Monochrome flat overrides on top of Adwaita-dark */
 
-@define-color bg0  #121212;
-@define-color bg1  #181818;
-@define-color bg2  #222222;
-@define-color line #2c2c2c;
-@define-color mute #777777;
-@define-color fg   #d0d0d0;
-@define-color hi   #ffffff;
+/* Palette (`theme`) */
+@import url("colors.css");
 
 /* Named colors used by apps and by Adwaita itself */
 @define-color theme_bg_color @bg1;

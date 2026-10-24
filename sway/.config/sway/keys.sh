@@ -10,7 +10,9 @@ sel=$(awk '
     function describe(cmd) {
         if (cmd ~ /^exec alacritty/)                  return "Open terminal"
         if (cmd ~ /^exec fuzzel$/)                    return "App launcher"
-        if (cmd ~ /grim /)                            return "Screenshot"
+        if (cmd ~ /screenshot\.sh area$/)            return "Screenshot (area)"
+        if (cmd ~ /screenshot\.sh/)                  return "Screenshot"
+        if (cmd ~ /cliphist list/)                    return "Clipboard history"
         if (cmd ~ /keys\.sh$/)                        return "Show keybindings"
         if (cmd ~ /menu\.sh$/)                        return "Power menu"
         if (cmd ~ /volume\.sh up$/)                   return "Volume up"

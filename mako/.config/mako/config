@@ -1,6 +1,6 @@
 font=JetBrains Mono 10
-background-color=#1a1a1a
-text-color=#d0d0d0
+# Colors come from the palette (`theme`)
+include=~/.config/mako/colors
 border-size=0
 border-radius=6
 padding=12

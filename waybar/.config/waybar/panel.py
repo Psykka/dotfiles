@@ -37,23 +37,24 @@ ICON = {
     "prev": "", "next": "", "volume": "", "muted": "",
     "mic": "", "mic-off": "", "lock": "", "logout": "",
     "reboot": "", "power": "", "keyboard": "",
+    "theme": "\uf042",
 }
 
 CSS = b"""
 window { background: transparent; }
 .panel {
-    background: #1a1a1a;
+    background: @surface;
     border-radius: 6px;
     padding: 16px;
     font-family: "JetBrains Mono", monospace;
     font-size: 13px;
-    color: #d0d0d0;
+    color: @fg;
 }
 .icon { font-family: "Font Awesome 6 Free"; font-weight: 900; }
-.title { color: #ffffff; font-weight: bold; }
-.muted { color: #777777; }
-.heading { color: #777777; font-size: 11px; }
-.art { background: #222222; border-radius: 4px; color: #777777; font-size: 22px; }
+.title { color: @hi; font-weight: bold; }
+.muted { color: @mute; }
+.heading { color: @mute; font-size: 11px; }
+.art { background: @bg2; border-radius: 4px; color: @mute; font-size: 22px; }
 
 button {
     background: transparent;
@@ -61,39 +62,43 @@ button {
     border-radius: 4px;
     box-shadow: none;
     padding: 6px 10px;
-    color: #d0d0d0;
+    color: @fg;
 }
-button:hover { background: #2c2c2c; color: #ffffff; }
-button.yes { background: #e8e8e8; color: #121212; }
+button:hover { background: @line; color: @hi; }
+button.yes { background: @accent; color: @bg0; }
+button.small { padding: 2px 8px; font-size: 11px; color: @mute; }
+button.small:hover { color: @hi; }
+button.small:disabled { color: @faint; background: transparent; }
+.small { font-size: 11px; }
 button.ctl { min-width: 40px; min-height: 32px; padding: 0; font-size: 14px; }
 button.ctl.main { min-width: 48px; font-size: 18px; }
 scale { padding: 0; margin: 0; }
 
-scale.pill trough { border-radius: 8px; background: #2c2c2c; }
-scale.pill highlight { border-radius: 8px; background: #e8e8e8; }
+scale.pill trough { border-radius: 8px; background: @line; }
+scale.pill highlight { border-radius: 8px; background: @accent; }
 scale.horizontal-pill trough { min-height: 28px; }
 scale.horizontal-pill highlight { min-height: 28px; min-width: 34px; }
 scale.vertical-pill trough { min-width: 28px; }
 scale.vertical-pill highlight { min-width: 28px; min-height: 34px; }
-scale.pill.off highlight { background: #555555; }
+scale.pill.off highlight { background: @off; }
 scale.pill slider {
     min-width: 0;
     min-height: 0;
     margin: 0;
     background: transparent;
 }
-.pill-icon { color: #121212; font-size: 12px; margin-left: 11px; }
+.pill-icon { color: @bg0; font-size: 12px; margin-left: 11px; }
 .pill-icon.bottom { margin: 0 0 10px 0; }
 
 scale trough {
-    background: #2c2c2c;
+    background: @line;
     border: none;
     border-radius: 2px;
     min-height: 4px;
 }
-scale highlight { background: #d0d0d0; border: none; border-radius: 2px; }
+scale highlight { background: @fg; border: none; border-radius: 2px; }
 scale slider {
-    background: #e8e8e8;
+    background: @accent;
     border: none;
     border-radius: 6px;
     box-shadow: none;
@@ -103,28 +108,29 @@ scale slider {
 }
 
 combobox button, combobox box {
-    background: #222222;
+    background: @bg2;
     border: none;
     box-shadow: none;
 }
 
-.notif { background: #222222; border-radius: 4px; padding: 8px 10px; }
+.notif { background: @bg2; border-radius: 4px; padding: 8px 10px; }
 
 calendar {
     background: transparent;
     border: none;
-    color: #d0d0d0;
+    color: @fg;
     padding: 2px;
 }
 calendar.header { background: transparent; border: none; }
-calendar.button { color: #777777; background: transparent; border: none; }
+calendar.big { font-size: 15px; padding: 4px 6px; }
+calendar.button { color: @mute; background: transparent; border: none; }
 calendar:selected {
-    background: #e8e8e8;
-    color: #121212;
+    background: @accent;
+    color: @bg0;
     border-radius: 3px;
 }
-calendar.highlight { color: #777777; }
-calendar:indeterminate { color: #444444; }
+calendar.highlight { color: @mute; }
+calendar:indeterminate { color: @faint; }
 """
 
 
@@ -365,40 +371,92 @@ def notifications():
     return data
 
 
+# mako keeps no "clear history" command, so clearing remembers the newest
+# id seen and hides everything up to it (reset on reboot, like mako's history)
+CLEARED = os.path.join(RUNTIME, "bar-notifications-cleared")
+
+
+def visible_notifications():
+    try:
+        cleared = int(open(CLEARED).read())
+    except (OSError, ValueError):
+        cleared = 0
+    notes = [n for n in notifications() if int(n.get("id") or 0) > cleared]
+    return sorted(notes, key=lambda n: -int(n.get("id") or 0))  # newest first
+
+
 class Calendar(Gtk.Box):
     def __init__(self):
-        super().__init__(spacing=20)
+        super().__init__(spacing=28)
 
         left = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
-        left.set_size_request(300, -1)
-        left.pack_start(label("NOTIFICATIONS", ["heading"]), False, False, 0)
-        scroll = Gtk.ScrolledWindow()
-        scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
-        scroll.set_size_request(-1, 220)
-        items = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
-        notes = notifications()
+        left.set_size_request(400, -1)
+        header = Gtk.Box()
+        header.pack_start(label("NOTIFICATIONS", ["heading"]), True, True, 0)
+        self.clear = Gtk.Button(label="Clear")
+        self.clear.get_style_context().add_class("small")
+        self.clear.connect("clicked", lambda _: self.clear_all())
+        header.pack_end(self.clear, False, False, 0)
+        left.pack_start(header, False, False, 0)
+
+        # Shows as many whole cards as fit next to the calendar, then scrolls
+        self.scroll = Gtk.ScrolledWindow()
+        self.scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        self.items = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        self.scroll.add(self.items)
+        left.pack_start(self.scroll, False, False, 0)
+        self.header = header
+        self.pack_start(left, True, True, 0)
+
+        self.right = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        self.right.pack_start(label("CALENDAR", ["heading"]), False, False, 6)
+        cal = Gtk.Calendar()
+        cal.get_style_context().add_class("big")
+        self.right.pack_start(cal, False, False, 0)
+        self.pack_start(self.right, False, False, 0)
+        self.fill(visible_notifications())
+
+    def fill(self, notes):
+        for c in self.items.get_children():
+            self.items.remove(c)
+        self.clear.set_sensitive(bool(notes))
         if not notes:
-            items.pack_start(label("No notifications", ["muted"]), False, False, 0)
+            self.items.pack_start(label("No notifications", ["muted"]), False, False, 0)
+        # Same height for every card: one line each, cut with "…"
         for n in notes:
             card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
             card.get_style_context().add_class("notif")
-            card.pack_start(label(n.get("app_name") or n.get("app-name") or "", ["muted"], ellipsize=True), False, False, 0)
-            card.pack_start(label(n.get("summary") or "", ["title"], ellipsize=True), False, False, 0)
-            body = n.get("body") or ""
+            top = Gtk.Box(spacing=8)
+            top.pack_start(label(n.get("summary") or "", ["title"], ellipsize=True), True, True, 0)
+            app = n.get("app_name") or n.get("app-name") or ""
+            top.pack_end(label(app, ["muted", "small"], xalign=1.0), False, False, 0)
+            card.pack_start(top, False, False, 0)
+            body = " ".join((n.get("body") or "").split())
             if body:
-                b = label(body)
-                b.set_line_wrap(True)
-                b.set_max_width_chars(34)
-                card.pack_start(b, False, False, 0)
-            items.pack_start(card, False, False, 0)
-        scroll.add(items)
-        left.pack_start(scroll, True, True, 0)
-        self.pack_start(left, True, True, 0)
+                card.pack_start(label(body, ellipsize=True), False, False, 0)
+            self.items.pack_start(card, False, False, 0)
+        self.items.show_all()
+        # Sizes are only known once the window is styled and shown
+        GLib.idle_add(self.fit)
 
-        right = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
-        right.pack_start(label("CALENDAR", ["heading"]), False, False, 0)
-        right.pack_start(Gtk.Calendar(), False, False, 0)
-        self.pack_start(right, False, False, 0)
+    def fit(self):
+        cards = self.items.get_children()
+        if not cards:
+            return False
+        card = cards[0].get_preferred_height()[1]
+        room = self.right.get_preferred_height()[1] - self.header.get_preferred_height()[1] - 8
+        count = max(1, min(len(cards), (room + 6) // (card + 6)))
+        height = count * card + (count - 1) * 6
+        self.scroll.set_min_content_height(height)
+        self.scroll.set_max_content_height(height)
+        return False
+
+    def clear_all(self):
+        ids = [int(n.get("id") or 0) for n in notifications()]
+        with open(CLEARED, "w") as f:
+            f.write(str(max(ids, default=0)))
+        run("makoctl", "dismiss", "--all")
+        self.fill([])
 
 
 # ---------------------------------------------------------- general menu
@@ -468,6 +526,10 @@ class Menu(Gtk.Box):
         buttons.pack_start(label("SYSTEM", ["heading"]), False, False, 4)
         buttons.pack_start(icon_button("keyboard", "Keybindings", lambda: self.run_and_quit(
             [os.path.expanduser("~/.config/sway/keys.sh")])), False, False, 0)
+        theme = os.path.expanduser("~/.local/bin/theme")
+        other = "Light" if run(theme, "current") != "light" else "Dark"
+        buttons.pack_start(icon_button("theme", f"{other} theme", lambda: self.run_and_quit(
+            [theme, "toggle"])), False, False, 0)
         for icon, text, cmd in self.POWER:
             buttons.pack_start(icon_button(icon, text, lambda t=text, c=cmd: self.confirm(t, c)), False, False, 0)
         self.stack.add_named(buttons, "buttons")
@@ -560,8 +622,13 @@ def main():
     take_over(mode)
     GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGTERM, Gtk.main_quit)
 
+    # Palette (`theme`) first, so the CSS can use @bg0, @fg, @accent...
+    try:
+        colors = open(os.path.expanduser("~/.config/waybar/colors.css"), "rb").read()
+    except OSError:
+        colors = b""
     provider = Gtk.CssProvider()
-    provider.load_from_data(CSS)
+    provider.load_from_data(colors + CSS)
     Gtk.StyleContext.add_provider_for_screen(
         Gtk.Window().get_screen(), provider, Gtk.STYLE_PROVIDER_PRIORITY_USER + 1)
 
