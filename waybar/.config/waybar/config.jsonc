@@ -1,35 +1,49 @@
 {
     "layer": "top",
     "position": "top",
-    "height": 26,
+    "height": 32,
     "spacing": 0,
     "reload_style_on_change": true,
 
-    // The clock stays dead center; media fills the space to its left
+    // Islands hang from the top edge, like a notch
+    "margin-left": 12,
+    "margin-right": 12,
+
+    // The clock stays dead center; media is its own island, centered in
+    // the space between the workspaces and the clock
     "fixed-center": true,
     "expand-left": true,
-    "modules-left": ["sway/workspaces", "mpris"],
+    "modules-left": ["sway/workspaces", "custom/space#before-media", "mpris", "custom/space#after-media"],
     "modules-center": ["clock"],
-    "modules-right": ["tray", "custom/menu"],
+    "modules-right": ["group/right"],
 
+    // One dot per open workspace: ● is the current one
     "sway/workspaces": {
-        "disable-scroll": true
+        "disable-scroll": true,
+        "format": "{icon}",
+        "format-icons": {
+            "focused": "●",
+            "urgent": "●",
+            "default": "○"
+        }
     },
+
+    // Invisible spacers that keep the media island centered
+    "custom/space#before-media": { "format": " ", "expand": true, "tooltip": false },
+    "custom/space#after-media": { "format": " ", "expand": true, "tooltip": false },
 
     // Media: icon, app and title, only while something is playing.
     // Left click: mini player, right click: focus the app
     "mpris": {
         "format": "{player_icon}  {player} · {title}",
-        "expand": true,
-        "align": 0.5,
-        "max-length": 500,
+        "max-length": 60,
         "format-paused": "",
         "format-stopped": "",
         "player-icons": {
-            "default": "\uf001",
-            "firefox": "\uf269",
-            "chromium": "\uf268",
-            "spotify": "\uf1bc"
+            "default": "",
+            "firefox": "",
+            "chromium": "",
+            "spotify": ""
         },
         "tooltip": false,
         "on-click": "~/.config/waybar/panel.py media",
@@ -44,6 +58,12 @@
         "on-click": "~/.config/waybar/panel.py calendar"
     },
 
+    // Tray and general menu share the right island
+    "group/right": {
+        "orientation": "horizontal",
+        "modules": ["tray", "custom/menu"]
+    },
+
     // Tray icons (Spotify crashes on startup without a tray host)
     "tray": {
         "icon-size": 14,
@@ -52,7 +72,7 @@
 
     // General menu: audio devices, volume and power
     "custom/menu": {
-        "format": "\uf142",
+        "format": "",
         "tooltip": false,
         "on-click": "~/.config/waybar/panel.py menu"
     }

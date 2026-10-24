@@ -12,7 +12,7 @@ with GNU Stow (backing up anything in the way) and applies the color theme.
 On Debian there is no SwayFX, so it runs on plain sway without rounded corners
 and shadows.
 
-`theme dark|light|toggle` switches the palette; colors live in `themes/`.
+Colors live in `themes/dark.ini`; after editing it, run `theme` to apply.
 
 `Super + /` shows all keybindings.
 

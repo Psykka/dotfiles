@@ -37,7 +37,6 @@ ICON = {
     "prev": "", "next": "", "volume": "", "muted": "",
     "mic": "", "mic-off": "", "lock": "", "logout": "",
     "reboot": "", "power": "", "keyboard": "",
-    "theme": "\uf042",
 }
 
 CSS = b"""
@@ -526,10 +525,6 @@ class Menu(Gtk.Box):
         buttons.pack_start(label("SYSTEM", ["heading"]), False, False, 4)
         buttons.pack_start(icon_button("keyboard", "Keybindings", lambda: self.run_and_quit(
             [os.path.expanduser("~/.config/sway/keys.sh")])), False, False, 0)
-        theme = os.path.expanduser("~/.local/bin/theme")
-        other = "Light" if run(theme, "current") != "light" else "Dark"
-        buttons.pack_start(icon_button("theme", f"{other} theme", lambda: self.run_and_quit(
-            [theme, "toggle"])), False, False, 0)
         for icon, text, cmd in self.POWER:
             buttons.pack_start(icon_button(icon, text, lambda t=text, c=cmd: self.confirm(t, c)), False, False, 0)
         self.stack.add_named(buttons, "buttons")

@@ -11,37 +11,50 @@
     text-shadow: none;
 }
 
+/* The bar itself is invisible; each group is an island hanging from the
+   top of the screen, like a notch */
 window#waybar {
-    background: @bg0;
+    background: transparent;
     color: @fg;
 }
 
+/* notch.svg draws the curved sides (12px each); the middle is plain color */
+#workspaces, #mpris, #clock, #right {
+    background-color: @island;
+    background-clip: padding-box;
+    border-style: solid;
+    border-width: 0 12px;
+    border-image: url("notch.svg") 0 12 0 12 stretch;
+    padding: 0 6px 2px 6px;
+}
+
+/* Workspaces: one dot per open workspace, ● is the current one */
 #workspaces button {
-    padding: 0 8px;
+    min-width: 0;
+    padding: 0 5px;
     background: transparent;
     color: @mute;
+    transition: color 200ms ease;
+    animation: workspace-in 250ms ease-out;
 }
-#workspaces button:hover { background: @bg2; }
+/* The size goes on the label itself: the `*` rule above would win otherwise */
+#workspaces button label { font-size: 12px; }
+
+/* A new workspace fades in while its dot opens up. Waybar removes closed
+   workspaces at once, so there is no closing animation */
+@keyframes workspace-in {
+    from { opacity: 0; padding: 0; }
+    to { opacity: 1; padding: 0 5px; }
+}
+
 #workspaces button.focused { color: @hi; }
-#workspaces button.urgent {
-    background: @accent;
-    color: @bg0;
-}
+#workspaces button.urgent { color: @accent; }
+#workspaces button:hover { color: @fg; background: transparent; }
 
-/* Media is centered between the workspaces and the clock */
-#mpris {
-    padding: 0 12px;
-    color: @fg;
-}
-#mpris.paused { color: @mute; }
+#mpris, #clock, #custom-menu { transition: color 150ms ease; }
+#mpris:hover, #clock:hover, #custom-menu:hover { color: @hi; }
 
-#clock { padding: 0 10px 0 6px; }
+#custom-space-before-media, #custom-space-after-media { background: transparent; }
 
-#tray { padding: 0 6px; }
-
-#custom-menu {
-    padding: 0 12px;
-    color: @hi;
-}
-
-#mpris:hover, #clock:hover, #custom-menu:hover { background: @bg2; }
+#tray { padding: 0 6px 0 0; }
+#custom-menu { padding: 0 4px; color: @hi; }
