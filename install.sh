@@ -9,7 +9,7 @@ set -eu
 
 cd "$(dirname "$0")"
 REPO=$(pwd)
-STOW_PACKAGES="sway waybar mako fuzzel swaylock alacritty gtk fonts keyboard spotify bin wallpapers"
+STOW_PACKAGES="sway waybar mako fuzzel swaylock alacritty gtk fonts keyboard spotify bin wallpapers launcher"
 
 say() { printf '\n\033[1m==> %s\033[0m\n' "$*"; }
 
@@ -23,13 +23,14 @@ esac
 
 # Same name everywhere
 common="swaybg swaylock swayidle waybar playerctl fuzzel alacritty grim slurp
-wl-clipboard cliphist mate-polkit stow wireplumber"
+wl-clipboard cliphist mate-polkit stow wireplumber wdisplays kanshi blueman
+papirus-icon-theme"
 
 case $distro in
     fedora) packages="$common mako sway-systemd libnotify pulseaudio-utils
         gtk-layer-shell python3-gobject jetbrains-mono-fonts-all rsms-inter-fonts
         google-noto-color-emoji-fonts fontawesome-6-free-fonts
-        fontawesome-6-brands-fonts adwaita-mono-fonts" ;;
+        fontawesome-6-brands-fonts adwaita-mono-fonts papirus-icon-theme-dark" ;;
     arch) packages="$common mako libnotify libpulse gtk-layer-shell python-gobject
         ttf-jetbrains-mono inter-font noto-fonts-emoji otf-font-awesome" ;;
     debian) packages="$common sway mako-notifier libnotify-bin pulseaudio-utils
@@ -89,6 +90,9 @@ for pkg in $STOW_PACKAGES; do
     done
     stow -t "$HOME" "$pkg"
 done
+
+say "Building the grayscale icon theme"
+"$HOME/.local/bin/make-mono-icons" || echo "Skipped: Papirus is not installed"
 
 say "Applying the color theme"
 "$HOME/.local/bin/theme" "$(cat themes/current 2>/dev/null || echo dark)"

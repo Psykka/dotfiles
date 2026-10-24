@@ -13,19 +13,27 @@
     // the space between the workspaces and the clock
     "fixed-center": true,
     "expand-left": true,
-    "modules-left": ["sway/workspaces", "custom/space#before-media", "mpris", "custom/space#after-media"],
+    "modules-left": ["group/left", "custom/space#before-media", "mpris", "custom/space#after-media"],
     "modules-center": ["clock"],
     "modules-right": ["group/right"],
 
-    // One dot per open workspace: ● is the current one
+    // Tux and the workspaces share the left island
+    "group/left": {
+        "orientation": "horizontal",
+        "modules": ["custom/tux", "sway/workspaces"]
+    },
+
+    // Tux opens the launcher
+    "custom/tux": {
+        "format": "<span font_size='11pt' rise='-1pt'>\uf17c</span>",
+        "tooltip": false,
+        "on-click": "fuzzel"
+    },
+
+    // The number of each open workspace; the current one is bright
     "sway/workspaces": {
         "disable-scroll": true,
-        "format": "{icon}",
-        "format-icons": {
-            "focused": "●",
-            "urgent": "●",
-            "default": "○"
-        }
+        "format": "{name}"
     },
 
     // Invisible spacers that keep the media island centered
@@ -58,10 +66,20 @@
         "on-click": "~/.config/waybar/panel.py calendar"
     },
 
-    // Tray and general menu share the right island
+    // Battery, tray and general menu share the right island
     "group/right": {
         "orientation": "horizontal",
-        "modules": ["tray", "custom/menu"]
+        "modules": ["battery", "tray", "custom/menu"]
+    },
+
+    // Only shows up on machines with a battery (laptops); a bolt while
+    // charging, and it turns bright (style.css)
+    "battery": {
+        "format": "<span font_size='10pt' rise='-1pt'>{icon}</span> {capacity}%",
+        "format-charging": "<span font_size='10pt' rise='-1pt'>\uf0e7</span> {capacity}%",
+        "format-icons": ["\uf244", "\uf243", "\uf242", "\uf241", "\uf240"],
+        "states": { "warning": 20, "critical": 10 },
+        "tooltip-format": "{timeTo}"
     },
 
     // Tray icons (Spotify crashes on startup without a tray host)
@@ -72,7 +90,7 @@
 
     // General menu: audio devices, volume and power
     "custom/menu": {
-        "format": "",
+        "format": "<span font_size='10pt' rise='-1pt'>\uf0c9</span>",
         "tooltip": false,
         "on-click": "~/.config/waybar/panel.py menu"
     }

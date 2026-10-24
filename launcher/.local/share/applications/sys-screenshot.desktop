@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Screenshot (area)
+Comment=Select an area and save it
+Icon=applets-screenshooter
+Exec=sysaction screenshot
+Keywords=screenshot;print;capture;
+Terminal=false
+Categories=System;

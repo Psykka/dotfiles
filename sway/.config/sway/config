@@ -14,7 +14,7 @@ bindsym Shift+Print exec ~/.config/sway/screenshot.sh area
 bindsym $mod+Shift+s exec ~/.config/sway/screenshot.sh area
 
 # Clipboard history
-bindsym $mod+v exec cliphist list | fuzzel --dmenu -p "clipboard ❯ " | cliphist decode | wl-copy
+bindsym $mod+v exec ~/.config/sway/clipboard.sh
 
 # Keybindings: list and run
 bindsym $mod+slash exec ~/.config/sway/keys.sh
@@ -51,6 +51,11 @@ bindsym $mod+Shift+4 move container to workspace number 4
 bindsym $mod+Shift+5 move container to workspace number 5
 bindsym $mod+Shift+6 move container to workspace number 6
 
+# Workspaces: Super + scroll goes to the previous / next one; past the
+# last, it opens a new workspace
+bindsym --whole-window $mod+button4 exec ~/.config/sway/workspace-scroll.py prev
+bindsym --whole-window $mod+button5 exec ~/.config/sway/workspace-scroll.py next
+
 # Reload config
 bindsym $mod+Shift+r reload
 
@@ -86,14 +91,17 @@ smart_gaps off
 include ~/.config/sway/colors
 include ~/.config/sway/fx.d/*
 
-# Fonts for GTK apps (Firefox and portals read these)
-exec_always gsettings set org.gnome.desktop.interface font-name 'Inter 10' && gsettings set org.gnome.desktop.interface monospace-font-name 'JetBrains Mono 10'
+# Fonts and icons for GTK apps (Firefox and portals read these)
+exec_always gsettings set org.gnome.desktop.interface font-name 'Inter 10' && gsettings set org.gnome.desktop.interface monospace-font-name 'JetBrains Mono 10' && gsettings set org.gnome.desktop.interface icon-theme Papirus-Mono
 
 # Bar, notifications, media tracking and clipboard history
 exec waybar
 exec mako
 exec playerctld daemon
 exec wl-paste --watch cliphist store
+
+# Display profiles (~/.config/kanshi/config); does nothing without one
+exec kanshi
 
 # Dialogs and small tool windows float, centered
 for_window [window_type="dialog"] floating enable
@@ -103,3 +111,5 @@ for_window [app_id="polkit-mate-authentication-agent-1"] floating enable
 for_window [app_id="xdg-desktop-portal-gtk"] floating enable
 for_window [app_id="org.pulseaudio.pavucontrol"] floating enable
 for_window [title="^Picture-in-Picture$"] floating enable, sticky enable
+for_window [app_id="(?i)wdisplays"] floating enable, resize set 1000 680, move position center
+for_window [app_id="(?i)blueman"] floating enable

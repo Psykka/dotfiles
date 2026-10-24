@@ -1,0 +1,150 @@
+#!/usr/bin/env python3
+"""Builds the Papirus-Mono icon theme: Papirus-Dark with grayscale app icons.
+
+Every color in each app icon is replaced by the gray of the same
+luminance, so the launcher and GTK apps match the monochrome palette.
+(Rewriting the colors, not an SVG filter: fuzzel's SVG renderer ignores
+filters.) Everything else (folders, actions, symbolic icons) is
+inherited from Papirus-Dark.
+
+Icons that installed apps ask for but Papirus keeps elsewhere (actions,
+devices) or doesn't have at all (the app's own hicolor icon) are made
+gray too. Run it again after installing new apps.
+
+Usage: make-mono-icons [source theme dir]   (default: Papirus-Dark)
+Output: ~/.local/share/icons/Papirus-Mono
+"""
+import os
+import pathlib
+import re
+import shutil
+import subprocess
+import sys
+
+import gi
+
+gi.require_version("GdkPixbuf", "2.0")
+from gi.repository import GdkPixbuf  # noqa: E402
+
+SOURCE = pathlib.Path(sys.argv[1] if len(sys.argv) > 1 else "/usr/share/icons/Papirus-Dark")
+OUT = pathlib.Path.home() / ".local/share/icons/Papirus-Mono"
+SIZES = ["16x16", "22x22", "24x24", "32x32", "48x48", "64x64"]
+APP_DIRS = ["/usr/share/applications", "/usr/local/share/applications",
+            "/var/lib/flatpak/exports/share/applications",
+            "~/.local/share/flatpak/exports/share/applications", "~/.local/share/applications"]
+HICOLOR = ["/usr/share/icons/hicolor", "/var/lib/flatpak/exports/share/icons/hicolor",
+           "~/.local/share/flatpak/exports/share/icons/hicolor", "~/.local/share/icons/hicolor"]
+HEX = re.compile(r"#([0-9a-fA-F]{6}|[0-9a-fA-F]{3})(?![0-9a-zA-Z_-])")
+
+
+def gray(match, svg):
+    # References like href="#abc" or url(#abc) are ids, not colors
+    before = svg[max(0, match.start() - 6):match.start()]
+    if before.endswith(("href=\"", "url(")):
+        return match.group(0)
+    h = match.group(1)
+    if len(h) == 3:
+        h = "".join(c * 2 for c in h)
+    r, g, b = (int(h[i:i + 2], 16) for i in (0, 2, 4))
+    y = round(0.299 * r + 0.587 * g + 0.114 * b)
+    return "#%02x%02x%02x" % (y, y, y)
+
+
+def grayscale(svg):
+    return HEX.sub(lambda m: gray(m, svg), svg)
+
+
+def wanted_icons():
+    """Icon names asked for by the installed apps' .desktop files."""
+    names = set()
+    for d in APP_DIRS:
+        for f in pathlib.Path(os.path.expanduser(d)).glob("*.desktop"):
+            for line in f.read_text(errors="replace").splitlines():
+                if line.startswith("Icon=") and "/" not in line:
+                    names.add(line[5:].strip())
+    return names
+
+
+def find_elsewhere(name, size):
+    """An icon from another Papirus context, else the app's own hicolor one."""
+    for ctx in sorted((SOURCE / size).glob("*")):
+        f = ctx / f"{name}.svg"
+        if ctx.name != "apps" and f.exists():
+            return f
+    # Some Papirus icons (actions) only come in small sizes: scale up the
+    # biggest one, it's an SVG anyway
+    for other in sorted(SIZES, key=lambda s: -int(s.split("x")[0])):
+        for ctx in sorted((SOURCE / other).glob("*")):
+            f = ctx / f"{name}.svg"
+            if f.exists() and not ctx.name.endswith("symbolic"):
+                return f
+    for root in HICOLOR:
+        root = pathlib.Path(os.path.expanduser(root))
+        for sub in ("scalable/apps", f"{size}/apps", "256x256/apps", "512x512/apps", "128x128/apps"):
+            for ext in ("svg", "png"):
+                f = root / sub / f"{name}.{ext}"
+                if f.exists():
+                    return f
+    return None
+
+
+def write_gray(src, dst_dir, name):
+    if src.suffix == ".svg":
+        (dst_dir / f"{name}.svg").write_text(grayscale(src.read_text(errors="replace")))
+        return
+    pix = GdkPixbuf.Pixbuf.new_from_file(str(src))
+    gray_pix = pix.copy()
+    pix.saturate_and_pixelate(gray_pix, 0.0, False)
+    gray_pix.savev(str(dst_dir / f"{name}.png"), "png", [], [])
+
+
+def main():
+    if not (SOURCE / "index.theme").exists():
+        sys.exit(f"make-mono-icons: no icon theme at {SOURCE} (install papirus-icon-theme)")
+    shutil.rmtree(OUT, ignore_errors=True)
+    OUT.mkdir(parents=True)
+
+    dirs = []
+    for size in SIZES:
+        src, dst = SOURCE / size / "apps", OUT / size / "apps"
+        if not src.is_dir():
+            continue
+        dst.mkdir(parents=True)
+        dirs.append(f"{size}/apps")
+        for f in os.scandir(src):
+            target = dst / f.name
+            if f.is_symlink():
+                link = os.readlink(f.path)
+                # Links inside the folder stay links; anything else gets copied
+                if "/" not in link:
+                    os.symlink(link, target)
+                    continue
+            if not f.name.endswith(".svg"):
+                continue
+            svg = pathlib.Path(f.path).read_text(errors="replace")
+            target.write_text(grayscale(svg) or svg)
+
+    # Icons the installed apps want that are not app icons in Papirus
+    extra = 0
+    for name in wanted_icons():
+        for size in SIZES:
+            dst = OUT / size / "apps"
+            if not dst.is_dir() or any((dst / f"{name}.{e}").exists() for e in ("svg", "png")):
+                continue
+            src = find_elsewhere(name, size)
+            if src:
+                write_gray(src, dst, name)
+                extra += 1
+
+    size_of = lambda d: d.split("x")[0]
+    index = ["[Icon Theme]", "Name=Papirus-Mono", "Comment=Papirus-Dark with grayscale app icons",
+             "Inherits=Papirus-Dark,Adwaita,hicolor", f"Directories={','.join(dirs)}", ""]
+    for d in dirs:
+        index += [f"[{d}]", f"Size={size_of(d)}", "Context=Applications", "Type=Fixed", ""]
+    (OUT / "index.theme").write_text("\n".join(index))
+    subprocess.run(["gtk-update-icon-cache", "-q", str(OUT)], stderr=subprocess.DEVNULL)
+    print(f"make-mono-icons: built {OUT} ({extra} extra icons from outside Papirus apps)")
+
+
+if __name__ == "__main__":
+    main()

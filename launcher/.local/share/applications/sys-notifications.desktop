@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Notifications
+Comment=Recent notifications and the calendar
+Icon=preferences-system-notifications
+Exec=sysaction notifications
+Keywords=notifications;calendar;
+Terminal=false
+Categories=System;

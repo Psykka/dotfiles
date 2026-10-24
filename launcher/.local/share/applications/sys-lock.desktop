@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Lock
+Comment=Lock the screen
+Icon=system-lock-screen
+Exec=sysaction lock
+Keywords=lock;screen;
+Terminal=false
+Categories=System;

@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Power off
+Comment=Turn the computer off
+Icon=system-shutdown
+Exec=sysaction poweroff
+Keywords=shutdown;poweroff;turn off;power;
+Terminal=false
+Categories=System;

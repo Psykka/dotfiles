@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Reboot
+Comment=Restart the computer
+Icon=system-reboot
+Exec=sysaction reboot
+Keywords=reboot;restart;power;
+Terminal=false
+Categories=System;

@@ -38,6 +38,7 @@ ICON = {
     "mic": "", "mic-off": "", "lock": "", "logout": "",
     "reboot": "", "power": "", "keyboard": "",
     "down": "\uf078", "right": "\uf054", "check": "\uf00c",
+    "display": "\uf108", "bluetooth": "\uf293",
 }
 
 CSS = b"""
@@ -579,6 +580,13 @@ class Menu(Gtk.Box):
         self.stack = Gtk.Stack(vhomogeneous=False, interpolate_size=True)
         self.stack.set_transition_type(Gtk.StackTransitionType.CROSSFADE)
         buttons = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+        # Settings apps; Bluetooth only where there is an adapter
+        buttons.pack_start(label("SETTINGS", ["heading"]), False, False, 4)
+        buttons.pack_start(icon_button("display", "Displays", lambda: self.run_and_quit(
+            ["wdisplays"])), False, False, 0)
+        if os.listdir("/sys/class/bluetooth") if os.path.isdir("/sys/class/bluetooth") else False:
+            buttons.pack_start(icon_button("bluetooth", "Bluetooth", lambda: self.run_and_quit(
+                ["blueman-manager"])), False, False, 0)
         buttons.pack_start(label("SYSTEM", ["heading"]), False, False, 4)
         buttons.pack_start(icon_button("keyboard", "Keybindings", lambda: self.run_and_quit(
             [os.path.expanduser("~/.config/sway/keys.sh")])), False, False, 0)
