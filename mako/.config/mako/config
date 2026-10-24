@@ -1,0 +1,12 @@
+font=JetBrains Mono 10
+background-color=#1a1a1a
+text-color=#d0d0d0
+border-size=0
+border-radius=6
+padding=12
+margin=8
+width=320
+anchor=top-right
+default-timeout=5000
+# Kept for the notifications list in the calendar panel
+max-history=30

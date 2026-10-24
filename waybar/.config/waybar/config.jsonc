@@ -1,0 +1,59 @@
+{
+    "layer": "top",
+    "position": "top",
+    "height": 26,
+    "spacing": 0,
+    "reload_style_on_change": true,
+
+    // The clock stays dead center; media fills the space to its left
+    "fixed-center": true,
+    "expand-left": true,
+    "modules-left": ["sway/workspaces", "mpris"],
+    "modules-center": ["clock"],
+    "modules-right": ["tray", "custom/menu"],
+
+    "sway/workspaces": {
+        "disable-scroll": true
+    },
+
+    // Media: icon, app and title, only while something is playing.
+    // Left click: mini player, right click: focus the app
+    "mpris": {
+        "format": "{player_icon}  {player} · {title}",
+        "expand": true,
+        "align": 0.5,
+        "max-length": 500,
+        "format-paused": "",
+        "format-stopped": "",
+        "player-icons": {
+            "default": "\uf001",
+            "firefox": "\uf269",
+            "chromium": "\uf268",
+            "spotify": "\uf1bc"
+        },
+        "tooltip": false,
+        "on-click": "~/.config/waybar/panel.py media",
+        "on-click-right": "~/.config/waybar/media-focus.sh",
+        "on-click-middle": "playerctl play-pause"
+    },
+
+    // Date and time. Click: calendar + notifications
+    "clock": {
+        "format": "{:%a %d %b  %H:%M}",
+        "tooltip": false,
+        "on-click": "~/.config/waybar/panel.py calendar"
+    },
+
+    // Tray icons (Spotify crashes on startup without a tray host)
+    "tray": {
+        "icon-size": 14,
+        "spacing": 8
+    },
+
+    // General menu: audio devices, volume and power
+    "custom/menu": {
+        "format": "\uf142",
+        "tooltip": false,
+        "on-click": "~/.config/waybar/panel.py menu"
+    }
+}

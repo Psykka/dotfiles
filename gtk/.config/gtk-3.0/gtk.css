@@ -1,0 +1,123 @@
+/* Monochrome flat overrides on top of Adwaita-dark */
+
+@define-color bg0  #121212;
+@define-color bg1  #181818;
+@define-color bg2  #222222;
+@define-color line #2c2c2c;
+@define-color mute #777777;
+@define-color fg   #d0d0d0;
+@define-color hi   #ffffff;
+
+/* Named colors used by apps and by Adwaita itself */
+@define-color theme_bg_color @bg1;
+@define-color theme_fg_color @fg;
+@define-color theme_base_color @bg0;
+@define-color theme_text_color @fg;
+@define-color theme_selected_bg_color @fg;
+@define-color theme_selected_fg_color @bg0;
+@define-color insensitive_bg_color @bg1;
+@define-color insensitive_fg_color @mute;
+@define-color borders @line;
+@define-color unfocused_borders @line;
+@define-color theme_unfocused_bg_color @bg1;
+@define-color theme_unfocused_fg_color @fg;
+@define-color theme_unfocused_base_color @bg0;
+@define-color theme_unfocused_text_color @fg;
+@define-color theme_unfocused_selected_bg_color @fg;
+@define-color theme_unfocused_selected_fg_color @bg0;
+
+* {
+    outline-color: alpha(@fg, 0.4);
+    text-shadow: none;
+    -gtk-icon-shadow: none;
+}
+
+window, .background {
+    background-color: @bg1;
+    color: @fg;
+}
+
+/* Title bars */
+headerbar, .titlebar {
+    background: @bg0;
+    border-bottom: 1px solid @line;
+    box-shadow: none;
+}
+
+/* Buttons */
+button {
+    background: @bg2;
+    border: 1px solid @line;
+    border-radius: 4px;
+    box-shadow: none;
+    color: @fg;
+}
+button:hover { background: @line; }
+button:active, button:checked,
+button.suggested-action {
+    background: @fg;
+    border-color: @fg;
+    color: @bg0;
+}
+button.destructive-action {
+    background: @bg2;
+    border-color: @mute;
+    color: @hi;
+}
+button:disabled {
+    background: @bg1;
+    color: @mute;
+}
+
+/* Text fields */
+entry, spinbutton {
+    background: @bg0;
+    border: 1px solid @line;
+    border-radius: 4px;
+    box-shadow: none;
+    color: @fg;
+}
+entry:focus, spinbutton:focus-within {
+    border-color: @fg;
+    box-shadow: none;
+}
+
+/* Menus, popovers and tooltips */
+menu, .menu, .context-menu, popover.background {
+    background: @bg0;
+    border: 1px solid @line;
+    box-shadow: none;
+}
+menuitem:hover, modelbutton:hover {
+    background: @bg2;
+    color: @hi;
+}
+tooltip, tooltip.background {
+    background: @bg0;
+    border: 1px solid @line;
+    color: @fg;
+}
+
+/* Selection */
+*:selected, selection,
+treeview.view:selected, row:selected {
+    background-color: @fg;
+    color: @bg0;
+}
+
+/* Accent spots that are blue in Adwaita */
+check:checked, radio:checked, switch:checked,
+progressbar progress, scale highlight, levelbar block.filled {
+    background: @fg;
+    border-color: @fg;
+    color: @bg0;
+}
+notebook > header tab:checked {
+    box-shadow: inset 0 -2px @fg;
+}
+*:link, link { color: @hi; }
+
+/* Scrollbars */
+scrollbar { background: transparent; border: none; }
+scrollbar slider { background: @line; }
+scrollbar slider:hover { background: @mute; }

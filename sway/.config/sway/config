@@ -42,7 +42,7 @@ bindsym $mod+Shift+5 move container to workspace number 5
 bindsym $mod+Shift+6 move container to workspace number 6
 
 # Background
-output * bg #222222 solid_color
+output * bg #181818 solid_color
 
 # Reload config
 bindsym $mod+Shift+r reload
@@ -75,24 +75,18 @@ gaps inner 8
 gaps outer 4
 smart_gaps off
 
-# Border colors       border  bg      text    indicator child_border
-client.focused        #89b4fa #1e1e2e #cdd6f4 #89b4fa   #89b4fa
-client.unfocused      #313244 #1e1e2e #6c7086 #313244   #313244
+# Border colors: only the focused window shows one; the rest match
+# the background color so they disappear
+#                              border  bg      text    indicator child_border
+client.focused                 #e8e8e8 #121212 #ffffff #e8e8e8   #e8e8e8
+client.focused_inactive        #181818 #121212 #777777 #181818   #181818
+client.unfocused               #181818 #121212 #777777 #181818   #181818
+client.urgent                  #181818 #121212 #777777 #181818   #181818
 
-# Bar
-bar {
-    position top
-    status_command ~/.config/sway/status.sh
-    font pango:monospace 10
-    height 22
-    colors {
-        background #1e1e2e
-        statusline #cdd6f4
-        separator  #1e1e2e
-        #                  border  bg      text
-        focused_workspace  #1e1e2e #1e1e2e #89b4fa
-        active_workspace   #1e1e2e #1e1e2e #cdd6f4
-        inactive_workspace #1e1e2e #1e1e2e #6c7086
-        urgent_workspace   #f38ba8 #1e1e2e #f38ba8
-    }
-}
+# Dark theme and fonts for GTK apps (Firefox and portals read these)
+exec_always gsettings set org.gnome.desktop.interface color-scheme prefer-dark && gsettings set org.gnome.desktop.interface gtk-theme Adwaita-dark && gsettings set org.gnome.desktop.interface font-name 'Inter 10' && gsettings set org.gnome.desktop.interface monospace-font-name 'JetBrains Mono 10'
+
+# Bar, notifications and media tracking (Waybar, mako, playerctld)
+exec waybar
+exec mako
+exec playerctld daemon

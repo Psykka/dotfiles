@@ -5,7 +5,7 @@
 lock=$(printf '\356\202\242')
 
 menu() {
-    fuzzel --dmenu -l 5 --minimal-lines -w 22 -p "$1" --placeholder=""
+    fuzzel --dmenu -p "$1" --placeholder=""
 }
 
 # confirm ICON QUESTION

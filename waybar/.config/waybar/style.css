@@ -1,0 +1,44 @@
+* {
+    font-family: "JetBrains Mono", "Font Awesome 6 Free", "Font Awesome 6 Brands", monospace;
+    font-size: 13px;
+    min-height: 0;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+    text-shadow: none;
+}
+
+window#waybar {
+    background: #121212;
+    color: #d0d0d0;
+}
+
+#workspaces button {
+    padding: 0 8px;
+    background: transparent;
+    color: #777777;
+}
+#workspaces button:hover { background: #222222; }
+#workspaces button.focused { color: #ffffff; }
+#workspaces button.urgent {
+    background: #e8e8e8;
+    color: #121212;
+}
+
+/* Media is centered between the workspaces and the clock */
+#mpris {
+    padding: 0 12px;
+    color: #d0d0d0;
+}
+#mpris.paused { color: #777777; }
+
+#clock { padding: 0 10px 0 6px; }
+
+#tray { padding: 0 6px; }
+
+#custom-menu {
+    padding: 0 12px;
+    color: #ffffff;
+}
+
+#mpris:hover, #clock:hover, #custom-menu:hover { background: #222222; }
