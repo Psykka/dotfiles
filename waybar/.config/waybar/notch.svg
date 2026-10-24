@@ -3,5 +3,5 @@
        Island shape: concave curves where it meets the top of the screen and
        6px corners at the bottom, like windows and menus. Sliced 12px on each
        side (style.css). The <svg> tag must come first so GTK detects the format. -->
-  <path fill="#0a0a0a" d="M0 0H36C32.7 0 30 2.7 30 6V26C30 29.3 27.3 32 24 32H12C8.7 32 6 29.3 6 26V6C6 2.7 3.3 0 0 0Z"/>
+  <path fill="#151515" d="M0 0H36C32.7 0 30 2.7 30 6V26C30 29.3 27.3 32 24 32H12C8.7 32 6 29.3 6 26V6C6 2.7 3.3 0 0 0Z"/>
 </svg>

@@ -20,6 +20,7 @@ sel=$(awk '
         if (cmd ~ /volume\.sh mute$/)                 return "Mute audio"
         if (cmd ~ /swaylock/)                         return "Lock screen"
         if (cmd == "kill")                            return "Close window"
+        if (cmd == "floating toggle")                 return "Toggle floating"
         if (cmd == "reload")                          return "Reload config"
         if (cmd ~ /^workspace number $/)              return "Go to workspace"
         if (cmd ~ /^move container to workspace number $/) return "Move window to workspace"

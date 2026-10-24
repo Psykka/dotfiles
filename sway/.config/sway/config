@@ -32,6 +32,11 @@ bindsym $mod+minus exec ~/.config/sway/volume.sh down
 # Close window
 bindsym $mod+Shift+q kill
 
+# Floating windows: Super+F toggles; Super + left drag moves,
+# Super + right drag resizes
+bindsym $mod+f floating toggle
+floating_modifier $mod normal
+
 # Workspaces: go to / move window
 bindsym $mod+1 workspace number 1
 bindsym $mod+2 workspace number 2
