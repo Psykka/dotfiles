@@ -1,0 +1,127 @@
+#!/usr/bin/env python3
+"""Locks the screen with gtklock: the clock in a frosted-glass circle over
+the wallpaper.
+
+The circle shows a blurred copy of the wallpaper, placed exactly where the
+sharp one is on screen, so it looks like glass. That needs the screen size,
+so the stylesheet is written here at every lock, with the palette colors
+(~/dotfiles/themes, through `theme get`). The blurred wallpaper is cached
+in ~/.cache/lock until the wallpaper changes.
+
+Usage: lock    (returns once the screen is locked)
+"""
+import os
+import pathlib
+import subprocess
+import json
+
+import gi
+
+gi.require_version("GdkPixbuf", "2.0")
+from gi.repository import GdkPixbuf  # noqa: E402
+
+HOME = pathlib.Path.home()
+CONFIG = HOME / ".config/gtklock"
+CACHE = HOME / ".cache/lock"
+RING = 380  # diameter of the circle, in px
+
+
+def palette(*keys):
+    theme = HOME / ".local/bin/theme"
+    return [subprocess.run([theme, "get", k], capture_output=True, text=True).stdout.strip() for k in keys]
+
+
+def rgba(hexcolor, alpha):
+    r, g, b = (int(hexcolor[i:i + 2], 16) for i in (0, 2, 4))
+    return f"rgba({r}, {g}, {b}, {alpha})"
+
+
+def screen_size():
+    out = subprocess.run(["swaymsg", "-t", "get_outputs"], capture_output=True, text=True).stdout
+    outputs = [o for o in json.loads(out or "[]") if o.get("active")]
+    focused = next((o for o in outputs if o.get("focused")), outputs[0] if outputs else None)
+    if not focused:
+        return 1920, 1080
+    return focused["rect"]["width"], focused["rect"]["height"]
+
+
+def blurred(wallpaper):
+    """A soft blur: shrink a lot, then grow back smoothly, twice."""
+    CACHE.mkdir(parents=True, exist_ok=True)
+    out = CACHE / f"blur-{int(os.path.getmtime(wallpaper))}-{pathlib.Path(wallpaper).stem}.jpg"
+    if not out.exists():
+        for old in CACHE.glob("blur-*.jpg"):
+            old.unlink()
+        pix = GdkPixbuf.Pixbuf.new_from_file(wallpaper)
+        w, h = pix.get_width(), pix.get_height()
+        for factor in (24, 8):
+            small = pix.scale_simple(max(1, w // factor), max(1, h // factor), GdkPixbuf.InterpType.BILINEAR)
+            pix = small.scale_simple(w, h, GdkPixbuf.InterpType.BILINEAR)
+        pix.savev(str(out), "jpeg", ["quality"], ["90"])
+    return out
+
+
+def stylesheet(wallpaper, blur, sw, sh, bg0, fg, hi, error):
+    _, iw, ih = GdkPixbuf.Pixbuf.get_file_info(wallpaper)
+    # Where the wallpaper ends up with background-size: cover
+    scale = max(sw / iw, sh / ih)
+    bw, bh = round(iw * scale), round(ih * scale)
+    wx, wy = (sw - bw) / 2, (sh - bh) / 2
+    # The circle sits in the middle of the screen
+    cx, cy = (sw - RING) / 2, (sh - RING) / 2
+    return f"""
+window {{
+    background-image: linear-gradient(rgba(10, 10, 10, 0.35), rgba(10, 10, 10, 0.35)), url("{wallpaper}");
+    background-size: {bw}px {bh}px, {bw}px {bh}px;
+    background-position: {wx}px {wy}px, {wx}px {wy}px;
+    background-repeat: no-repeat;
+    font-family: "Inter", sans-serif;
+    color: #{fg};
+}}
+/* Frosted circle: the blurred wallpaper, placed where the sharp one is */
+#window-box {{
+    min-width: {RING - 80}px;
+    min-height: {RING - 108}px;
+    padding: 108px 40px 0 40px;
+    border-radius: 999px;
+    border: none;
+    box-shadow: 0 12px 48px rgba(0, 0, 0, 0.65), 0 2px 10px rgba(0, 0, 0, 0.4);
+    background-image: linear-gradient({rgba(bg0, 0.65)}, {rgba(bg0, 0.65)}), url("{blur}");
+    background-size: {bw}px {bh}px, {bw}px {bh}px;
+    background-position: {wx - cx}px {wy - cy}px, {wx - cx}px {wy - cy}px;
+    background-repeat: no-repeat;
+}}
+#date-label {{ font-size: 15px; font-weight: 500; color: #{fg}; }}
+#clock-label {{ font-family: "Inter Display"; font-size: 100px; font-weight: 300; color: #{hi}; margin-bottom: 8px; }}
+#input-label {{ color: transparent; font-size: 1px; min-width: 0; margin: 0; padding: 0; }}
+/* No visible field and no caret: just the dots, like swaylock */
+#input-field, #input-field:focus {{
+    background: transparent;
+    color: #{hi};
+    border: none;
+    box-shadow: none;
+    font-size: 18px;
+    letter-spacing: 9px;
+    caret-color: transparent;
+}}
+#input-field selection {{ background: transparent; color: #{hi}; }}
+#unlock-button {{ opacity: 0; min-width: 0; min-height: 0; padding: 0; margin: 0; border: none; font-size: 1px; }}
+#error-label, #warning-label {{ color: #{error}; font-size: 14px; font-weight: 500; margin-top: 6px; }}
+"""
+
+
+def main():
+    wallpaper, bg0, fg, hi, error = palette("wallpaper", "bg0", "fg", "hi", "bright_red")
+    wallpaper = os.path.expanduser(wallpaper)
+    sw, sh = screen_size()
+    css = CACHE / "style.css"
+    CACHE.mkdir(parents=True, exist_ok=True)
+    css.write_text(stylesheet(wallpaper, blurred(wallpaper), sw, sh, bg0, fg, hi, error))
+
+    env = dict(os.environ, XDG_CONFIG_HOME=str(CONFIG / "xdg"))
+    os.execvpe("gtklock", ["gtklock", "-d", "-s", str(css), "-x", str(CONFIG / "layout.ui"),
+                           "-t", "%H:%M", "-D", "%A, %d %B"], env)
+
+
+if __name__ == "__main__":
+    main()

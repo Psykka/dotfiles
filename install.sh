@@ -9,7 +9,7 @@ set -eu
 
 cd "$(dirname "$0")"
 REPO=$(pwd)
-STOW_PACKAGES="sway waybar mako fuzzel swaylock alacritty gtk fonts keyboard spotify bin wallpapers launcher bash"
+STOW_PACKAGES="sway waybar mako fuzzel gtklock alacritty gtk fonts keyboard spotify bin wallpapers launcher bash"
 
 say() { printf '\n\033[1m==> %s\033[0m\n' "$*"; }
 
@@ -22,7 +22,7 @@ case "$ID ${ID_LIKE:-}" in
 esac
 
 # Same name everywhere
-common="swaybg swaylock swayidle waybar playerctl fuzzel alacritty grim slurp
+common="swaybg gtklock swayidle waybar playerctl fuzzel alacritty grim slurp
 wl-clipboard cliphist mate-polkit stow wireplumber wdisplays kanshi blueman
 papirus-icon-theme starship eza bat"
 

@@ -63,8 +63,8 @@ bindsym $mod+Shift+r reload
 exec sh -c 'for a in /usr/libexec/polkit-mate-authentication-agent-1 /usr/lib/mate-polkit/polkit-mate-authentication-agent-1; do [ -x "$a" ] && exec "$a"; done'
 
 # Lock: Super+L, or automatically after 20 min (never suspends)
-bindsym $mod+l exec swaylock -f
-exec swayidle -w timeout 1200 'swaylock -f'
+bindsym $mod+l exec lock
+exec swayidle -w timeout 1200 lock
 
 # Keyboard: US ANSI with accents (dead keys)
 input type:keyboard {

@@ -18,7 +18,7 @@ sel=$(awk '
         if (cmd ~ /volume\.sh up$/)                   return "Volume up"
         if (cmd ~ /volume\.sh down$/)                 return "Volume down"
         if (cmd ~ /volume\.sh mute$/)                 return "Mute audio"
-        if (cmd ~ /swaylock/)                         return "Lock screen"
+        if (cmd ~ /(^| )lock$/)                       return "Lock screen"
         if (cmd == "kill")                            return "Close window"
         if (cmd == "floating toggle")                 return "Toggle floating"
         if (cmd ~ /workspace-scroll\.py prev$/)      return "Previous workspace"

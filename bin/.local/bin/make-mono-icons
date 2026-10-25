@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Builds the Papirus-Mono icon theme: Papirus-Dark with grayscale app icons.
+"""Builds the Papirus-Mono icon theme: Papirus-Dark in grays.
 
-Every color in each app icon is replaced by the gray of the same
-luminance, so the launcher and GTK apps match the monochrome palette.
-(Rewriting the colors, not an SVG filter: fuzzel's SVG renderer ignores
-filters.) Everything else (folders, actions, symbolic icons) is
-inherited from Papirus-Dark.
+Every color in every icon (apps, folders, devices, file types, status,
+dialogs...) is replaced by the gray of the same luminance, so the
+launcher, GTK apps and dialogs match the monochrome palette. (Rewriting
+the colors, not an SVG filter: fuzzel's SVG renderer ignores filters.)
+Symbolic icons are left alone: they are already single-color and take
+the GTK text color.
 
 Icons that installed apps ask for but Papirus keeps elsewhere (actions,
 devices) or doesn't have at all (the app's own hicolor icon) are made
@@ -32,6 +33,10 @@ SIZES = ["16x16", "22x22", "24x24", "32x32", "48x48", "64x64"]
 APP_DIRS = ["/usr/share/applications", "/usr/local/share/applications",
             "/var/lib/flatpak/exports/share/applications",
             "~/.local/share/flatpak/exports/share/applications", "~/.local/share/applications"]
+# Freedesktop context of each Papirus folder, for index.theme
+CONTEXTS = {"actions": "Actions", "apps": "Applications", "categories": "Categories",
+            "devices": "Devices", "emblems": "Emblems", "emotes": "Emotes",
+            "mimetypes": "MimeTypes", "places": "Places", "status": "Status"}
 HICOLOR = ["/usr/share/icons/hicolor", "/var/lib/flatpak/exports/share/icons/hicolor",
            "~/.local/share/flatpak/exports/share/icons/hicolor", "~/.local/share/icons/hicolor"]
 HEX = re.compile(r"#([0-9a-fA-F]{6}|[0-9a-fA-F]{3})(?![0-9a-zA-Z_-])")
@@ -106,44 +111,50 @@ def main():
 
     dirs = []
     for size in SIZES:
-        src, dst = SOURCE / size / "apps", OUT / size / "apps"
-        if not src.is_dir():
+        if not (SOURCE / size).is_dir():
             continue
-        dst.mkdir(parents=True)
-        dirs.append(f"{size}/apps")
-        for f in os.scandir(src):
-            target = dst / f.name
-            if f.is_symlink():
-                link = os.readlink(f.path)
-                # Links inside the folder stay links; anything else gets copied
-                if "/" not in link:
-                    os.symlink(link, target)
-                    continue
-            if not f.name.endswith(".svg"):
+        for ctx in sorted(os.listdir(SOURCE / size)):
+            src, dst = SOURCE / size / ctx, OUT / size / ctx
+            if ctx not in CONTEXTS or not src.is_dir():
                 continue
-            svg = pathlib.Path(f.path).read_text(errors="replace")
-            target.write_text(grayscale(svg) or svg)
+            dirs.append((f"{size}/{ctx}", CONTEXTS[ctx]))
+            # A context that is just a link to another one stays a link
+            if src.is_symlink() and "/" not in os.readlink(src):
+                os.symlink(os.readlink(src), dst)
+                continue
+            dst.mkdir(parents=True)
+            for f in os.scandir(src):
+                target = dst / f.name
+                if f.is_symlink():
+                    link = os.readlink(f.path)
+                    # Links inside the folder stay links; anything else gets copied
+                    if "/" not in link:
+                        os.symlink(link, target)
+                        continue
+                if not f.name.endswith(".svg"):
+                    continue
+                svg = pathlib.Path(f.path).read_text(errors="replace")
+                target.write_text(grayscale(svg) or svg)
 
     # Icons the installed apps want that are not app icons in Papirus
     extra = 0
     for name in wanted_icons():
         for size in SIZES:
             dst = OUT / size / "apps"
-            if not dst.is_dir() or any((dst / f"{name}.{e}").exists() for e in ("svg", "png")):
+            if not dst.is_dir() or any(OUT.glob(f"{size}/*/{name}.svg")) or any(OUT.glob(f"{size}/*/{name}.png")):
                 continue
             src = find_elsewhere(name, size)
             if src:
                 write_gray(src, dst, name)
                 extra += 1
 
-    size_of = lambda d: d.split("x")[0]
-    index = ["[Icon Theme]", "Name=Papirus-Mono", "Comment=Papirus-Dark with grayscale app icons",
-             "Inherits=Papirus-Dark,Adwaita,hicolor", f"Directories={','.join(dirs)}", ""]
-    for d in dirs:
-        index += [f"[{d}]", f"Size={size_of(d)}", "Context=Applications", "Type=Fixed", ""]
+    index = ["[Icon Theme]", "Name=Papirus-Mono", "Comment=Papirus-Dark in grays",
+             "Inherits=Papirus-Dark,Adwaita,hicolor", f"Directories={','.join(d for d, _ in dirs)}", ""]
+    for d, context in dirs:
+        index += [f"[{d}]", f"Size={d.split('x')[0]}", f"Context={context}", "Type=Fixed", ""]
     (OUT / "index.theme").write_text("\n".join(index))
     subprocess.run(["gtk-update-icon-cache", "-q", str(OUT)], stderr=subprocess.DEVNULL)
-    print(f"make-mono-icons: built {OUT} ({extra} extra icons from outside Papirus apps)")
+    print(f"make-mono-icons: built {OUT} ({extra} extra icons from outside Papirus)")
 
 
 if __name__ == "__main__":

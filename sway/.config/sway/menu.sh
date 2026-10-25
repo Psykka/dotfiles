@@ -44,7 +44,7 @@ confirm() {
 
 power() {
     case $1 in
-        lock)     confirm "$lock" "Lock" && exec swaylock -f ;;
+        lock)     confirm "$lock" "Lock" && exec lock ;;
         logout)   confirm "$logout" "Log out" && exec swaymsg exit ;;
         reboot)   confirm "$reboot" "Reboot" && exec systemctl reboot ;;
         poweroff) confirm "$power" "Power off" && exec systemctl poweroff ;;

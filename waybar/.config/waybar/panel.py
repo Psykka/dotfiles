@@ -563,7 +563,7 @@ class AudioRow(Gtk.Box):
 class Menu(Gtk.Box):
     # (icon, tile label, confirmation, command)
     POWER = [
-        ("lock", "Lock", "Lock", ["swaylock", "-f"]),
+        ("lock", "Lock", "Lock", ["lock"]),
         ("logout", "Log out", "Log out", ["swaymsg", "exit"]),
         ("reboot", "Reboot", "Reboot", ["systemctl", "reboot"]),
         ("power", "Off", "Power off", ["systemctl", "poweroff"]),
