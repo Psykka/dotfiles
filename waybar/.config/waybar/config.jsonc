@@ -55,9 +55,9 @@
             "spotify": ""
         },
         "tooltip": false,
-        "on-click": "~/.config/waybar/panel.py media",
-        "on-click-right": "~/.config/waybar/media-focus.sh",
-        "on-click-middle": "playerctl play-pause"
+        "on-click": "~/.config/waybar/media-click.sh panel",
+        "on-click-right": "~/.config/waybar/media-click.sh focus",
+        "on-click-middle": "~/.config/waybar/media-click.sh toggle"
     },
 
     // Date and time. Click: calendar + notifications

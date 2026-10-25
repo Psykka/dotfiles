@@ -6,14 +6,12 @@ corner_radius 6
 # Windows ease in when they open and out when they close
 animation_duration_ms 200
 
-# Soft shadow under the popups and the launcher. Not on notifications:
+# Soft shadow under the launcher. The bar popups draw their own (it has
+# to slide with them). Not on notifications:
 # mako draws them all on one surface, so the shadow would wrap the stack
 shadow_color #000000b0
 shadow_blur_radius 24
 shadow_offset 0 4
-layer_effects "bar-panel" {
-    shadows enable; corner_radius 6;
-}
 layer_effects "launcher" {
     shadows enable; corner_radius 6;
 }

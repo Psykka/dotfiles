@@ -45,6 +45,7 @@ ICON = {
 CSS = b"""
 window { background: transparent; }
 .panel {
+    box-shadow: 0 8px 22px rgba(0, 0, 0, 0.55), 0 1px 4px rgba(0, 0, 0, 0.35);
     background: @surface;
     border-radius: 6px;
     padding: 16px;
@@ -861,6 +862,9 @@ class Backdrop(Gtk.Window):
 
 
 SLIDE_MS = 220
+# Transparent room around the panel for its shadow (drawn by the CSS, so it
+# slides with the panel; SwayFX would shadow the whole window instead)
+SHADOW = 24
 
 
 class Panel(Gtk.Window):
@@ -874,7 +878,7 @@ class Panel(Gtk.Window):
         GtkLayerShell.set_margin(self, GtkLayerShell.Edge.TOP, 6)
         if mode in ("menu", "network"):
             GtkLayerShell.set_anchor(self, GtkLayerShell.Edge.RIGHT, True)
-            GtkLayerShell.set_margin(self, GtkLayerShell.Edge.RIGHT, 6)
+            GtkLayerShell.set_margin(self, GtkLayerShell.Edge.RIGHT, 6 - SHADOW)
 
         transparent(self)
 
@@ -884,14 +888,16 @@ class Panel(Gtk.Window):
         # Slides down from the bar when it opens, and back up when it closes
         self.revealer = Gtk.Revealer(transition_type=Gtk.RevealerTransitionType.SLIDE_DOWN,
                                      transition_duration=SLIDE_MS)
-        self.revealer.add(frame)
+        room = Gtk.Box(margin_start=SHADOW, margin_end=SHADOW, margin_bottom=SHADOW)
+        room.add(frame)
+        self.revealer.add(room)
         self.add(self.revealer)
         self.closing = False
         # The window starts at its final size (transparent) and the content
         # slides inside it: sway won't follow a surface that grows every frame
         self.revealer.set_valign(Gtk.Align.START)
-        frame.show_all()
-        self.set_size_request(frame.get_preferred_width()[1], frame.get_preferred_height()[1])
+        room.show_all()
+        self.set_size_request(room.get_preferred_width()[1], room.get_preferred_height()[1])
 
         if mode == "media":
             frame.show_all()
@@ -899,7 +905,7 @@ class Panel(Gtk.Window):
             center = (WORKSPACES_WIDTH + screen / 2 - CLOCK_WIDTH / 2) / 2
             width = frame.get_preferred_width()[1]
             GtkLayerShell.set_anchor(self, GtkLayerShell.Edge.LEFT, True)
-            GtkLayerShell.set_margin(self, GtkLayerShell.Edge.LEFT, max(6, int(center - width / 2)))
+            GtkLayerShell.set_margin(self, GtkLayerShell.Edge.LEFT, max(6, int(center - width / 2)) - SHADOW)
 
         self.connect("key-press-event", lambda _w, e: e.keyval == 0xff1b and self.close())
         self.connect("destroy", Gtk.main_quit)
