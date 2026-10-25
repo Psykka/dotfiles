@@ -113,6 +113,8 @@ exec_always gsettings set org.gnome.desktop.interface font-name 'Inter 10' && gs
 exec waybar
 exec mako
 exec playerctld daemon
+# Puts back the microphone gains a headset loses on replug (Sound page)
+exec ~/.config/waybar/audio.py watch
 exec wl-paste --watch cliphist store
 
 # Display profiles (~/.config/kanshi/config); does nothing without one

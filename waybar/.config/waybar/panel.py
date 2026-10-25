@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Bar popups: mini media player, calendar + notifications, general menu.
+"""Bar popups: mini media player, calendar + notifications, general menu, sound.
 
-Usage: panel.py media|calendar|menu|network|updates
+Usage: panel.py media|calendar|menu|network|updates|sound
 Running it again with the same mode closes it; another mode replaces it.
 """
 import hashlib
@@ -12,10 +12,13 @@ import signal
 import subprocess
 import sys
 import threading
+import time
 import urllib.parse
 import urllib.request
 
 import gi
+
+import audio
 
 gi.require_version("Gtk", "3.0")
 gi.require_version("Gdk", "3.0")
@@ -37,10 +40,11 @@ ICON = {
     "prev": "", "next": "", "volume": "", "muted": "",
     "mic": "", "mic-off": "", "lock": "", "logout": "",
     "reboot": "", "power": "", "keyboard": "",
-    "down": "\uf078", "right": "\uf054", "check": "\uf00c",
+    "down": "\uf078", "right": "\uf054", "left": "\uf053", "check": "\uf00c",
     "wifi": "\uf1eb", "ethernet": "\uf0e8", "offline": "\uf00d",
     "upgrade": "\uf35b",
     "display": "\uf108", "bluetooth": "\uf293",
+    "warning": "\uf071", "wrench": "\uf0ad", "headphones": "\uf025",
 }
 
 CSS = b"""
@@ -79,10 +83,17 @@ button.tile:hover { background: @line; }
 button.small { padding: 2px 8px; font-size: 11px; color: @mute; }
 button.small:hover { color: @hi; }
 button.small:disabled { color: @faint; background: transparent; }
+button.back { padding: 0; }
+button.back:hover { background: transparent; }
+button.back:hover .heading { color: @hi; }
 .small { font-size: 11px; }
 button.ctl { min-width: 40px; min-height: 32px; padding: 0; font-size: 14px; }
 button.ctl.main { min-width: 48px; font-size: 18px; }
 scale { padding: 0; margin: 0; }
+levelbar trough { background: @line; border: none; border-radius: 3px; min-height: 6px; padding: 0; }
+levelbar block { border: none; border-radius: 3px; min-height: 6px; }
+levelbar block.filled { background: @accent; }
+levelbar block.empty { background: transparent; }
 
 scale.pill trough { border-radius: 8px; background: @line; }
 scale.pill highlight { border-radius: 8px; background: @accent; }
@@ -497,12 +508,18 @@ def devices(kind):
 class AudioRow(Gtk.Box):
     """Device picker + volume pill (icon toggles mute) for the sink or source."""
 
-    def __init__(self, kind, heading, icon_on, icon_off):
+    def __init__(self, kind, heading, icon_on, icon_off, on_pick=None, action=None):
         super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=6)
         self.kind = kind  # "sink" or "source"
+        self.on_pick = on_pick
         self.icons = (icon_on, icon_off)
         target = f"@DEFAULT_{kind.upper()}@"
-        self.pack_start(label(heading, ["heading"]), False, False, 0)
+        # An optional small button on the heading's right (like "Clear")
+        top = Gtk.Box()
+        top.pack_start(label(heading, ["heading"]), True, True, 0)
+        if action:
+            top.pack_end(action, False, False, 0)
+        self.pack_start(top, False, False, 0)
 
         # Current device; clicking opens the list of devices below it
         self.devices = devices(kind + "s")
@@ -561,6 +578,8 @@ class AudioRow(Gtk.Box):
         self.show_device()
         self.toggle_list()
         self.refresh()
+        if self.on_pick:
+            self.on_pick(name)
 
     def refresh(self):
         target = f"@DEFAULT_{self.kind.upper()}@"
@@ -823,6 +842,215 @@ class Network(Gtk.Box):
         self.pack_start(NetworkRow(open_list=True), False, False, 0)
 
 
+TEST_SOUND = "/usr/share/sounds/freedesktop/stereo/audio-test-signal.oga"
+
+
+class Sound(Gtk.Box):
+    """Sound page of the general menu (also opened by the speaker and mic on
+    the bar): devices and volumes, a live meter of the microphone, its
+    hardware gains, the apps recording, and buttons that fix the usual
+    problems. The meter only listens while the page is on screen."""
+
+    def __init__(self, on_back):
+        super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=16)
+        self.set_size_request(320, -1)
+        self.on_back = on_back
+        self.meter_proc = None
+        self.active = False
+        self.build()
+        GLib.timeout_add_seconds(2, self.refresh_apps)
+        self.connect("destroy", lambda _: self.stop_meter())
+
+    def build(self):
+        for c in self.get_children():
+            self.remove(c)
+        # Titled like the other sections, with a way back to the menu;
+        # closer to the first section than the sections are to each other
+        back = Gtk.Button(halign=Gtk.Align.START)
+        back.get_style_context().add_class("back")
+        row = Gtk.Box(spacing=6)
+        row.pack_start(label(ICON["left"], ["icon", "heading"]), False, False, 0)
+        row.pack_start(label("SOUND", ["heading"]), False, False, 0)
+        back.add(row)
+        back.connect("clicked", lambda _: self.on_back())
+        first = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        first.pack_start(back, False, False, 0)
+        self.pack_start(first, False, False, 0)
+        test = Gtk.Button(label="Test")
+        test.get_style_context().add_class("small")
+        test.connect("clicked", lambda _: spawn("paplay", TEST_SOUND))
+        first.pack_start(AudioRow("sink", "OUTPUT", "volume", "muted", action=test), False, False, 0)
+
+        self.input = AudioRow("source", "INPUT", "mic", "mic-off", on_pick=lambda _: self.build())
+        self.meter = Gtk.LevelBar(min_value=0, max_value=1)
+        for offset in (Gtk.LEVEL_BAR_OFFSET_LOW, Gtk.LEVEL_BAR_OFFSET_HIGH, Gtk.LEVEL_BAR_OFFSET_FULL):
+            self.meter.remove_offset_value(offset)
+        self.input.pack_start(self.meter, False, False, 0)
+        # One line whatever it says, so the page keeps its height
+        self.signal = label(css=["muted", "small"], ellipsize=True)
+        self.input.pack_start(self.signal, False, False, 0)
+        self.pack_start(self.input, False, False, 0)
+
+        # The device's own capture volumes, under PipeWire's: one stuck at 0%
+        # silences the microphone whatever the input volume says
+        source = audio.find(audio.real_sources(), run("pactl", "get-default-source"))
+        props = source["properties"] if source else {}
+        controls = audio.capture_controls(props["alsa.card"]) if "alsa.card" in props else []
+        if controls:
+            gains = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+            gains.pack_start(label("HARDWARE GAIN", ["heading"]), False, False, 0)
+            for c in controls:
+                gains.pack_start(self.gain_row(props, c), False, False, 0)
+            self.pack_start(gains, False, False, 0)
+
+        apps = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        apps.pack_start(label("RECORDING", ["heading"]), False, False, 0)
+        self.apps = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        apps.pack_start(self.apps, False, False, 0)
+        self.pack_start(apps, False, False, 0)
+        self.apps_seen = None
+        self.refresh_apps()
+
+        fixes = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        self.result = label(css=["small"])
+        self.result.set_line_wrap(True)
+        self.result.set_no_show_all(True)
+        fixes.pack_start(self.result, False, False, 0)
+        buttons = Gtk.Box(spacing=8, homogeneous=True)
+        restart = Gtk.Button(label="Restart audio")
+        restart.connect("clicked", lambda _: self.restart())
+        buttons.pack_start(restart, True, True, 0)
+        fix = Gtk.Button(label="Fix microphone")
+        fix.get_style_context().add_class("yes")
+        fix.connect("clicked", lambda _: self.fix())
+        buttons.pack_start(fix, True, True, 0)
+        fixes.pack_start(buttons, False, False, 0)
+        self.pack_start(fixes, False, False, 0)
+        self.show_all()
+        self.source = source
+        if self.active:
+            self.start_meter(source)
+
+    def activate(self):
+        self.active = True
+        self.start_meter(self.source)
+
+    def deactivate(self):
+        self.active = False
+        self.stop_meter()
+
+    def gain_row(self, props, c):
+        row = Gtk.Box(spacing=10)
+        name = c["name"] if c["index"] == 0 and not any(
+            o != c and o["name"] == c["name"] for o in audio.capture_controls(props["alsa.card"])) \
+            else f"{c['name']} {c['index']}"
+        row.pack_start(label(name, width=8, ellipsize=True), False, False, 0)
+        value = label(f"{c['percent']}%", ["muted", "small"], xalign=1.0, width=4)
+
+        def change(v):
+            audio.set_gain(props["alsa.card"], c["name"], c["index"], v)
+            audio.save_gain(audio.device_key(props), f"{c['name']},{c['index']}", int(v))
+            value.set_text(f"{int(v)}%")
+
+        slider = hslider(0, 100, change)
+        slider.set_value(c["percent"])
+        row.pack_start(slider, True, True, 0)
+        row.pack_end(value, False, False, 0)
+        return row
+
+    # -------------------------------------------------------- level meter
+
+    def start_meter(self, source):
+        self.stop_meter()
+        if not source:
+            self.signal.set_text("No microphone found: is it plugged in?")
+            return
+        if source["mute"]:
+            self.signal.set_text("Muted: click the mic icon above")
+        else:
+            self.signal.set_text("Listening…")
+        self.meter_proc = proc = audio.level_stream(source["name"])
+        threading.Thread(target=self.listen, args=(proc, source["mute"]), daemon=True).start()
+
+    def stop_meter(self):
+        if self.meter_proc:
+            self.meter_proc.kill()
+            self.meter_proc = None
+
+    def listen(self, proc, muted):
+        level, started, heard = 0.0, time.monotonic(), False
+        while True:
+            chunk = proc.stdout.read(400)  # 25 ms
+            if not chunk or proc is not self.meter_proc:
+                return
+            p = audio.peak(chunk)
+            heard = heard or p > 0
+            level = max(audio.dbfs(p), level * 0.85)
+            silent = not heard and time.monotonic() - started > 1.5
+            GLib.idle_add(self.show_level, level, silent, muted)
+
+    def show_level(self, level, silent, muted):
+        self.meter.set_value(level)
+        if muted:
+            return False
+        if silent:
+            text = "Nothing yet: speak, or check mute and gain"
+        else:
+            text = "Sound is coming in"
+        if self.signal.get_text() != text:
+            self.signal.set_text(text)
+        return False
+
+    # ------------------------------------------------------- apps + fixes
+
+    def refresh_apps(self):
+        sources = audio.real_sources()
+        default = audio.find(sources, run("pactl", "get-default-source"))
+        names = {s["index"]: s["properties"].get("device.nick", s["description"]) for s in sources}
+        apps = [(i, app, src) for i, app, src in audio.recording(sources)]
+        seen = [(app, src) for _, app, src in apps]
+        if seen == self.apps_seen:
+            return True
+        self.apps_seen = seen
+        for c in self.apps.get_children():
+            self.apps.remove(c)
+        if not apps:
+            self.apps.pack_start(label("No app is using the microphone", ["muted"]), False, False, 0)
+        for index, app, src in apps:
+            row = Gtk.Box(spacing=10)
+            row.pack_start(label(app, ellipsize=True), True, True, 0)
+            row.pack_end(label(names.get(src, "?"), ["muted", "small"], xalign=1.0), False, False, 0)
+            if default and src != default["index"]:
+                move = Gtk.Button(label="Use this mic")
+                move.get_style_context().add_class("small")
+                move.connect("clicked", lambda _, i=index, d=default["name"]: run(
+                    "pactl", "move-source-output", str(i), d) or self.refresh_apps())
+                row.pack_end(move, False, False, 0)
+            self.apps.pack_start(row, False, False, 0)
+        self.apps.show_all()
+        return True
+
+    def report(self, lines):
+        self.build()
+        self.result.set_text("\n".join(lines))
+        self.result.show()
+
+    def fix(self):
+        self.report(audio.fix())
+
+    def restart(self):
+        self.stop_meter()
+        self.signal.set_text("Restarting the sound server…")
+
+        def work():
+            subprocess.run(["systemctl", "--user", "restart", "wireplumber", "pipewire", "pipewire-pulse"])
+            time.sleep(2)  # devices show up again
+            audio.restore_gains()
+            GLib.idle_add(lambda: self.report(["Sound server restarted"]) or False)
+
+        threading.Thread(target=work, daemon=True).start()
+
+
 class Menu(Gtk.Box):
     # (icon, tile label, confirmation, command)
     POWER = [
@@ -832,12 +1060,18 @@ class Menu(Gtk.Box):
         ("power", "Off", "Power off", ["systemctl", "poweroff"]),
     ]
 
-    def __init__(self):
-        super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=16)
-        self.set_size_request(320, -1)
-        self.pack_start(NetworkRow(), False, False, 0)
-        self.pack_start(AudioRow("sink", "OUTPUT", "volume", "muted"), False, False, 0)
-        self.pack_start(AudioRow("source", "INPUT", "mic", "mic-off"), False, False, 0)
+    def __init__(self, page="main"):
+        super().__init__()
+        # The main page, and sub pages (Sound) that slide in from the right
+        self.pages = Gtk.Stack(vhomogeneous=False, hhomogeneous=False, transition_duration=200)
+        self.add(self.pages)
+        main = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=16)
+        main.set_size_request(320, -1)
+        self.pages.add_named(main, "main")
+        self.sound = Sound(on_back=lambda: self.show_page("main"))
+        self.pages.add_named(self.sound, "sound")
+
+        main.pack_start(NetworkRow(), False, False, 0)
 
         # Power buttons, swapped for a confirmation when one is picked
         # Not homogeneous, so the panel shrinks to the confirmation
@@ -846,6 +1080,9 @@ class Menu(Gtk.Box):
         buttons = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
         # Settings apps; Bluetooth only where there is an adapter
         buttons.pack_start(label("SETTINGS", ["heading"]), False, False, 4)
+        sound = icon_button("headphones", "Sound", lambda: self.show_page("sound"))
+        sound.get_child().pack_end(label(ICON["right"], ["icon", "muted"], xalign=1.0), True, True, 0)
+        buttons.pack_start(sound, False, False, 0)
         buttons.pack_start(icon_button("display", "Displays", lambda: self.run_and_quit(
             ["wdisplays"])), False, False, 0)
         if os.listdir("/sys/class/bluetooth") if os.path.isdir("/sys/class/bluetooth") else False:
@@ -877,7 +1114,20 @@ class Menu(Gtk.Box):
         self.stack.add_named(buttons, "buttons")
         self.confirm_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
         self.stack.add_named(self.confirm_box, "confirm")
-        self.pack_start(self.stack, False, False, 0)
+        main.pack_start(self.stack, False, False, 0)
+        # Set it even for "main": the stack shows whichever page was shown first
+        self.pages.show_all()
+        self.show_page(page, animate=False)
+
+    def show_page(self, page, animate=True):
+        self.pages.set_transition_type(
+            Gtk.StackTransitionType.NONE if not animate else
+            Gtk.StackTransitionType.SLIDE_LEFT if page != "main" else Gtk.StackTransitionType.SLIDE_RIGHT)
+        self.pages.set_visible_child_name(page)
+        if page == "sound":
+            self.sound.activate()
+        else:
+            self.sound.deactivate()
 
     def toggle_power(self):
         opening = not self.revealer.get_reveal_child()
@@ -947,7 +1197,7 @@ class Panel(Gtk.Window):
         GtkLayerShell.set_keyboard_mode(self, GtkLayerShell.KeyboardMode.EXCLUSIVE)
         GtkLayerShell.set_anchor(self, GtkLayerShell.Edge.TOP, True)
         GtkLayerShell.set_margin(self, GtkLayerShell.Edge.TOP, 6)
-        if mode in ("menu", "network", "updates"):
+        if mode in ("menu", "network", "updates", "sound"):
             GtkLayerShell.set_anchor(self, GtkLayerShell.Edge.RIGHT, True)
             GtkLayerShell.set_margin(self, GtkLayerShell.Edge.RIGHT, 6 - SHADOW)
 
@@ -955,7 +1205,8 @@ class Panel(Gtk.Window):
 
         frame = Gtk.Box()
         frame.get_style_context().add_class("panel")
-        frame.add({"media": Media, "calendar": Calendar, "menu": Menu, "network": Network, "updates": Updates}[mode]())
+        frame.add(Menu("sound") if mode == "sound" else
+                  {"media": Media, "calendar": Calendar, "menu": Menu, "network": Network, "updates": Updates}[mode]())
         # Slides down from the bar when it opens, and back up when it closes
         self.revealer = Gtk.Revealer(transition_type=Gtk.RevealerTransitionType.SLIDE_DOWN,
                                      transition_duration=SLIDE_MS)
@@ -968,7 +1219,10 @@ class Panel(Gtk.Window):
         # slides inside it: sway won't follow a surface that grows every frame
         self.revealer.set_valign(Gtk.Align.START)
         room.show_all()
-        self.set_size_request(room.get_preferred_width()[1], room.get_preferred_height()[1])
+        # The size it settles at once released (open_up): its minimum width,
+        # where long device names are cut with "…", not their full length
+        width = room.get_preferred_width()[0]
+        self.set_size_request(width, room.get_preferred_height_for_width(width)[1])
 
         if mode == "media":
             frame.show_all()
@@ -1000,8 +1254,8 @@ class Panel(Gtk.Window):
 
 def main():
     mode = sys.argv[1] if len(sys.argv) > 1 else ""
-    if mode not in ("media", "calendar", "menu", "network", "updates"):
-        sys.exit("usage: panel.py media|calendar|menu|network|updates")
+    if mode not in ("media", "calendar", "menu", "network", "updates", "sound"):
+        sys.exit("usage: panel.py media|calendar|menu|network|updates|sound")
     take_over(mode)
 
     # Palette (`theme`) first, so the CSS can use @bg0, @fg, @accent...

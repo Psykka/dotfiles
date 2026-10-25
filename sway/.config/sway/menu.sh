@@ -83,7 +83,7 @@ run() {
         clipboard)     exec ~/.config/sway/clipboard.sh ;;
         screenshot)    exec ~/.config/sway/screenshot.sh area ;;
         notifications) exec ~/.config/waybar/panel.py calendar ;;
-        sound)         exec ~/.config/waybar/panel.py menu ;;
+        sound)         exec ~/.config/waybar/panel.py sound ;;
         displays)      exec wdisplays ;;
         bluetooth)     exec blueman-manager ;;
         logo)          logo ;;
