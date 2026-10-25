@@ -27,12 +27,25 @@ with open(sys.argv[1], "w") as f:
 PY
 
 $SUDO sh -c "
+    set -e
     install -d /etc/greetd
     install -m 644 '$here/config.toml' '$stage/vtrgb' /etc/greetd/
     install -m 755 '$here/login-session' /usr/local/bin/
     # tuigreet remembers the last user and sessions here
     install -d -o greetd -g greetd /var/cache/tuigreet
-    systemctl enable greetd
+
+    # The login screen is whatever owns the display-manager.service alias,
+    # and that is all greetd has in its [Install]. With another greeter
+    # (gdm, sddm, lightdm) holding the alias, a plain 'systemctl enable
+    # greetd' fails and the old one keeps the screen, so turn it off first
+    # and then take the alias over.
+    old=\$(readlink -f /etc/systemd/system/display-manager.service 2>/dev/null || true)
+    case \${old##*/} in
+        ''|greetd.service) ;;
+        *) echo \"Replacing \${old##*/} as the login screen\"
+           systemctl disable \"\${old##*/}\" ;;
+    esac
+    systemctl enable --force greetd
     systemctl set-default graphical.target
 "
 echo "Login screen installed; it shows up at the next boot."
