@@ -9,6 +9,7 @@ sel=$(awk '
     # to the comment above them in the config, then to the raw command.
     function describe(cmd) {
         if (cmd ~ /^exec alacritty/)                  return "Open terminal"
+        if (cmd ~ /^exec files/)                     return "Open files"
         if (cmd ~ /launcher\.sh$/)                    return "App launcher"
         if (cmd ~ /screenshot\.sh area$/)            return "Screenshot (area)"
         if (cmd ~ /screenshot\.sh/)                  return "Screenshot"

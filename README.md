@@ -2,6 +2,8 @@
 
 My SwayFX configs on Fedora.
 
+![Desktop: nnn, ufetch, cava and cmatrix](screenshots/desktop.png)
+
 ```sh
 git clone git@github.com:Psykka/dotfiles.git ~/dotfiles
 ~/dotfiles/install.sh
@@ -15,6 +17,19 @@ and shadows.
 Colors live in `themes/dark.ini`; after editing it, run `theme` to apply.
 
 `Super + /` shows all keybindings.
+
+## Screenshots
+
+| | |
+|---|---|
+| ![App launcher](screenshots/launcher.png) | ![Keybindings](screenshots/keybindings.png) |
+| App launcher (`Super + Space`) | Keybindings (`Super + /`) |
+| ![Calendar and notifications](screenshots/calendar.png) | ![Media player](screenshots/media.png) |
+| Calendar and notifications (click the clock) | Media player (click the song) |
+| ![System menu](screenshots/menu.png) | ![Updates](screenshots/updates.png) |
+| Network, sound and power (`☰`) | Pending updates (the cube) |
+| ![Lock screen](screenshots/lock.png) | ![Login screen](screenshots/greeter.png) |
+| Lock screen (`Super + L`) | Login screen (greetd + tuigreet) |
 
 ## Credits
 

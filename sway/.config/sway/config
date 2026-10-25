@@ -5,6 +5,9 @@ set $mod Mod4
 # Terminal
 bindsym $mod+Return exec alacritty
 
+# Files
+bindsym $mod+e exec files
+
 # Launcher, with "System" (the System menu) pinned at the top
 bindsym $mod+space exec ~/.config/sway/launcher.sh
 

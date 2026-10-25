@@ -9,7 +9,7 @@ set -eu
 
 cd "$(dirname "$0")"
 REPO=$(pwd)
-STOW_PACKAGES="sway waybar mako fuzzel gtklock alacritty gtk fonts keyboard spotify bin wallpapers launcher bash"
+STOW_PACKAGES="sway waybar mako fuzzel gtklock alacritty gtk fonts keyboard spotify bin wallpapers launcher bash imv"
 
 say() { printf '\n\033[1m==> %s\033[0m\n' "$*"; }
 
@@ -24,7 +24,7 @@ esac
 # Same name everywhere
 common="swaybg gtklock swayidle waybar playerctl fuzzel alacritty grim slurp
 wl-clipboard cliphist mate-polkit stow wireplumber wdisplays kanshi blueman
-papirus-icon-theme starship eza bat"
+papirus-icon-theme starship eza bat nnn imv"
 
 case $distro in
     fedora) packages="$common mako sway-systemd libnotify pulseaudio-utils NetworkManager
@@ -81,6 +81,13 @@ case $distro in
         # shellcheck disable=SC2086
         sudo apt-get install -y $found ;;
 esac
+
+say "Default apps"
+# Folders open in nnn (files), images in imv
+xdg-mime default files.desktop inode/directory
+for type in png jpeg gif webp bmp tiff svg+xml avif; do
+    xdg-mime default imv.desktop image/$type
+done
 
 say "Package manager settings"
 SUDO=sudo system/install-system.sh

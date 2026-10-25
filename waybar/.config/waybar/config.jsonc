@@ -43,10 +43,10 @@
     "custom/space#before-media": { "format": " ", "expand": true, "tooltip": false },
     "custom/space#after-media": { "format": " ", "expand": true, "tooltip": false },
 
-    // Media: icon, app and title, only while something is playing.
+    // Media: app icon, artist and title, only while something is playing.
     // Left click: mini player, right click: focus the app
     "mpris": {
-        "format": "{player_icon}  {player} · {title}",
+        "format": "{player_icon}  {artist} · {title}",
         "max-length": 60,
         "player-icons": {
             "default": "",

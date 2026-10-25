@@ -1,0 +1,10 @@
+#!/bin/sh
+# Files: nnn in its own terminal window, in gray like the rest of the theme.
+# Images open in imv, everything else with its default app.
+#
+# Usage: files [FOLDER]      (inside a terminal, plain `nnn` works too)
+
+# A gray file list: dirs bright, files normal, links dim
+export NNN_COLORS=7777
+export NNN_FCOLORS=f4f4fffcfcfcf4f0f0f4f4f0
+exec alacritty --class files --title Files -e nnn "$@"
