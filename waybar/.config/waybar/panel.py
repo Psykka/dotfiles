@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Bar popups: mini media player, calendar + notifications, general menu.
 
-Usage: panel.py media|calendar|menu
+Usage: panel.py media|calendar|menu|network
 Running it again with the same mode closes it; another mode replaces it.
 """
 import hashlib
@@ -38,6 +38,7 @@ ICON = {
     "mic": "", "mic-off": "", "lock": "", "logout": "",
     "reboot": "", "power": "", "keyboard": "",
     "down": "\uf078", "right": "\uf054", "check": "\uf00c",
+    "wifi": "\uf1eb", "ethernet": "\uf0e8", "offline": "\uf00d",
     "display": "\uf108", "bluetooth": "\uf293",
 }
 
@@ -383,7 +384,9 @@ def visible_notifications():
         cleared = int(open(CLEARED).read())
     except (OSError, ValueError):
         cleared = 0
-    notes = [n for n in notifications() if int(n.get("id") or 0) > cleared]
+    # On-screen indicators (volume, brightness) are not notifications
+    notes = [n for n in notifications() if int(n.get("id") or 0) > cleared
+             and (n.get("app_name") or n.get("app-name")) != "OSD" and n.get("category") != "osd"]
     return sorted(notes, key=lambda n: -int(n.get("id") or 0))  # newest first
 
 
@@ -445,10 +448,14 @@ class Calendar(Gtk.Box):
         cards = self.items.get_children()
         if not cards:
             return False
-        card = cards[0].get_preferred_height()[1]
+        # Real height of each card (with or without a body line)
         room = self.right.get_preferred_height()[1] - self.header.get_preferred_height()[1] - 8
-        count = max(1, min(len(cards), (room + 6) // (card + 6)))
-        height = count * card + (count - 1) * 6
+        height = 0
+        for i, card in enumerate(cards):
+            h = card.get_preferred_height()[1] + (6 if i else 0)
+            if i and height + h > room:
+                break
+            height += h
         self.scroll.set_min_content_height(height)
         self.scroll.set_max_content_height(height)
         return False
@@ -560,6 +567,190 @@ class AudioRow(Gtk.Box):
         self.pill.set(int(m.group(1)) if m else 0, self.icons[muted], muted)
 
 
+def nm_fields(line):
+    """Splits a `nmcli -t` line: fields are ':'-separated, '\\:' is a colon."""
+    out, cur, esc = [], "", False
+    for ch in line:
+        if esc:
+            cur, esc = cur + ch, False
+        elif ch == "\\":
+            esc = True
+        elif ch == ":":
+            out.append(cur)
+            cur = ""
+        else:
+            cur += ch
+    return out + [cur]
+
+
+class NetworkRow(Gtk.Box):
+    """Current connection; with a Wi-Fi card, a list of networks to join.
+
+    Desktops with only a cable just show the connection."""
+
+    def __init__(self, open_list=False):
+        super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        self.pack_start(label("NETWORK", ["heading"]), False, False, 0)
+        devices = [nm_fields(l) for l in run("nmcli", "-t", "-f", "TYPE,STATE,CONNECTION", "device").splitlines()]
+        self.has_wifi = any(d[0] == "wifi" for d in devices)
+
+        card = Gtk.Button()
+        card.get_style_context().add_class("device")
+        row = Gtk.Box(spacing=10)
+        self.icon = label(css=["icon"], xalign=0.5, width=2)
+        row.pack_start(self.icon, False, False, 0)
+        names = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        self.title = label(css=["device-title"], ellipsize=True)
+        self.subtitle = label(css=["muted", "small"], ellipsize=True)
+        names.pack_start(self.title, False, False, 0)
+        names.pack_start(self.subtitle, False, False, 0)
+        row.pack_start(names, True, True, 0)
+        card.add(row)
+        self.pack_start(card, False, False, 0)
+
+        if self.has_wifi:
+            self.chevron = label(ICON["right"], ["icon", "muted"], xalign=1.0)
+            row.pack_end(self.chevron, False, False, 0)
+            card.connect("clicked", lambda _: self.toggle_list())
+            body = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+            toggle = Gtk.Box(spacing=10, margin_top=4)
+            toggle.pack_start(label("Wi-Fi", ["muted"]), True, True, 0)
+            self.switch = Gtk.Switch(active=run("nmcli", "radio", "wifi") == "enabled")
+            self.switch.connect("notify::active", lambda s, _: self.set_radio(s.get_active()))
+            toggle.pack_end(self.switch, False, False, 0)
+            body.pack_start(toggle, False, False, 0)
+            self.list = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+            body.pack_start(self.list, False, False, 0)
+            # Password for a new protected network, shown when needed
+            self.ask = Gtk.Box(spacing=6)
+            self.password = Gtk.Entry(visibility=False, placeholder_text="Password", hexpand=True)
+            self.password.connect("activate", lambda _: self.join(self.asking, self.password.get_text()))
+            go = Gtk.Button(label="Join")
+            go.get_style_context().add_class("yes")
+            go.connect("clicked", lambda _: self.join(self.asking, self.password.get_text()))
+            self.ask.pack_start(self.password, True, True, 0)
+            self.ask.pack_start(go, False, False, 0)
+            self.ask.set_no_show_all(True)
+            body.pack_start(self.ask, False, False, 0)
+            self.revealer = Gtk.Revealer(transition_type=Gtk.RevealerTransitionType.SLIDE_DOWN,
+                                         transition_duration=200)
+            self.revealer.add(body)
+            self.pack_start(self.revealer, False, False, 0)
+        self.asking = None
+        self.show_status()
+        if open_list and self.has_wifi:
+            GLib.idle_add(lambda: self.toggle_list() or False)
+
+    def show_status(self):
+        devices = [nm_fields(l) for l in run("nmcli", "-t", "-f", "TYPE,STATE,CONNECTION", "device").splitlines()]
+        up = [d for d in devices if len(d) == 3 and d[1] == "connected" and d[0] in ("ethernet", "wifi")]
+        if not up:
+            self.icon.set_text(ICON["offline"])
+            self.title.set_text("Disconnected")
+            self.subtitle.set_text("Wi-Fi off" if self.has_wifi and run("nmcli", "radio", "wifi") != "enabled" else "")
+        elif up[0][0] == "wifi":
+            self.icon.set_text(ICON["wifi"])
+            self.title.set_text(up[0][2])
+            self.subtitle.set_text("Wi-Fi")
+        else:
+            self.icon.set_text(ICON["ethernet"])
+            self.title.set_text("Wired")
+            self.subtitle.set_text(up[0][2])
+
+    def toggle_list(self):
+        opening = not self.revealer.get_reveal_child()
+        self.revealer.set_reveal_child(opening)
+        self.chevron.set_text(ICON["down" if opening else "right"])
+        if opening:
+            self.scan()
+
+    def set_radio(self, on):
+        run("nmcli", "radio", "wifi", "on" if on else "off")
+        self.show_status()
+        self.scan()
+
+    def scan(self):
+        for c in self.list.get_children():
+            self.list.remove(c)
+        if run("nmcli", "radio", "wifi") != "enabled":
+            self.list.show_all()
+            return
+        self.list.pack_start(label("Searching…", ["muted", "small"]), False, False, 4)
+        self.list.show_all()
+        threading.Thread(target=self.scan_worker, daemon=True).start()
+
+    def scan_worker(self):
+        lines = run("nmcli", "-t", "-f", "IN-USE,SSID,SIGNAL,SECURITY", "device", "wifi", "list").splitlines()
+        known = {f[0] for f in map(nm_fields, run("nmcli", "-t", "-f", "NAME,TYPE", "connection", "show").splitlines())
+                 if len(f) > 1 and f[1] == "802-11-wireless"}
+        nets = {}
+        for f in map(nm_fields, lines):
+            if len(f) < 4 or not f[1]:
+                continue
+            in_use, ssid, signal, security = f[0] == "*", f[1], int(f[2] or 0), f[3]
+            if ssid not in nets or in_use or signal > nets[ssid][1]:
+                nets[ssid] = (in_use or nets.get(ssid, (False,))[0], signal, security not in ("", "--"))
+        found = sorted(nets.items(), key=lambda n: (not n[1][0], -n[1][1]))[:8]
+        GLib.idle_add(self.show_networks, found, known)
+
+    def show_networks(self, found, known):
+        for c in self.list.get_children():
+            self.list.remove(c)
+        if not found:
+            self.list.pack_start(label("No networks found", ["muted", "small"]), False, False, 4)
+        for ssid, (in_use, signal, secured) in found:
+            b = Gtk.Button()
+            row = Gtk.Box(spacing=10)
+            row.pack_start(label(ICON["check"] if in_use else "", ["icon"], xalign=0.5, width=2), False, False, 0)
+            row.pack_start(label(ssid, ellipsize=True), True, True, 0)
+            row.pack_end(label(f"{signal}%", ["muted", "small"]), False, False, 0)
+            if secured:
+                row.pack_end(label(ICON["lock"], ["icon", "muted"]), False, False, 0)
+            b.add(row)
+            b.connect("clicked", lambda _, s=ssid, sec=secured: self.pick(s, sec, s in known))
+            self.list.pack_start(b, False, False, 0)
+        self.list.show_all()
+        return False
+
+    def pick(self, ssid, secured, known):
+        if known or not secured:
+            self.join(ssid, None)
+            return
+        self.asking = ssid
+        self.password.set_text("")
+        self.password.set_placeholder_text(f"Password for {ssid}")
+        self.ask.set_no_show_all(False)  # hidden when the menu opened
+        self.ask.show_all()
+        self.password.grab_focus()
+
+    def join(self, ssid, password):
+        if not ssid:
+            return
+        self.ask.hide()
+        self.subtitle.set_text(f"Connecting to {ssid}…")
+
+        def work():
+            known = any(nm_fields(l)[0] == ssid for l in run("nmcli", "-t", "-f", "NAME", "connection", "show").splitlines())
+            if known and not password:
+                run("nmcli", "connection", "up", "id", ssid)
+            elif password:
+                run("nmcli", "device", "wifi", "connect", ssid, "password", password)
+            else:
+                run("nmcli", "device", "wifi", "connect", ssid)
+            GLib.idle_add(lambda: (self.show_status(), self.scan(), False)[2])
+
+        threading.Thread(target=work, daemon=True).start()
+
+
+class Network(Gtk.Box):
+    """Network popup from the bar's network icon: Wi-Fi list already open."""
+
+    def __init__(self):
+        super().__init__(orientation=Gtk.Orientation.VERTICAL)
+        self.set_size_request(320, -1)
+        self.pack_start(NetworkRow(open_list=True), False, False, 0)
+
+
 class Menu(Gtk.Box):
     # (icon, tile label, confirmation, command)
     POWER = [
@@ -572,6 +763,7 @@ class Menu(Gtk.Box):
     def __init__(self):
         super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=16)
         self.set_size_request(320, -1)
+        self.pack_start(NetworkRow(), False, False, 0)
         self.pack_start(AudioRow("sink", "OUTPUT", "volume", "muted"), False, False, 0)
         self.pack_start(AudioRow("source", "INPUT", "mic", "mic-off"), False, False, 0)
 
@@ -639,7 +831,8 @@ class Menu(Gtk.Box):
 
     def run_and_quit(self, cmd):
         spawn(*cmd)
-        Gtk.main_quit()
+        top = self.get_toplevel()
+        top.close() if hasattr(top, "revealer") else Gtk.main_quit()
 
 
 # ---------------------------------------------------------------- window
@@ -663,7 +856,11 @@ class Backdrop(Gtk.Window):
             GtkLayerShell.set_anchor(self, edge, True)
         transparent(self)
         self.add_events(Gdk.EventMask.BUTTON_PRESS_MASK)
-        self.connect("button-press-event", lambda *_: Gtk.main_quit())
+        self.on_click = Gtk.main_quit
+        self.connect("button-press-event", lambda *_: self.on_click())
+
+
+SLIDE_MS = 220
 
 
 class Panel(Gtk.Window):
@@ -675,7 +872,7 @@ class Panel(Gtk.Window):
         GtkLayerShell.set_keyboard_mode(self, GtkLayerShell.KeyboardMode.EXCLUSIVE)
         GtkLayerShell.set_anchor(self, GtkLayerShell.Edge.TOP, True)
         GtkLayerShell.set_margin(self, GtkLayerShell.Edge.TOP, 6)
-        if mode == "menu":
+        if mode in ("menu", "network"):
             GtkLayerShell.set_anchor(self, GtkLayerShell.Edge.RIGHT, True)
             GtkLayerShell.set_margin(self, GtkLayerShell.Edge.RIGHT, 6)
 
@@ -683,8 +880,18 @@ class Panel(Gtk.Window):
 
         frame = Gtk.Box()
         frame.get_style_context().add_class("panel")
-        frame.add({"media": Media, "calendar": Calendar, "menu": Menu}[mode]())
-        self.add(frame)
+        frame.add({"media": Media, "calendar": Calendar, "menu": Menu, "network": Network}[mode]())
+        # Slides down from the bar when it opens, and back up when it closes
+        self.revealer = Gtk.Revealer(transition_type=Gtk.RevealerTransitionType.SLIDE_DOWN,
+                                     transition_duration=SLIDE_MS)
+        self.revealer.add(frame)
+        self.add(self.revealer)
+        self.closing = False
+        # The window starts at its final size (transparent) and the content
+        # slides inside it: sway won't follow a surface that grows every frame
+        self.revealer.set_valign(Gtk.Align.START)
+        frame.show_all()
+        self.set_size_request(frame.get_preferred_width()[1], frame.get_preferred_height()[1])
 
         if mode == "media":
             frame.show_all()
@@ -694,16 +901,31 @@ class Panel(Gtk.Window):
             GtkLayerShell.set_anchor(self, GtkLayerShell.Edge.LEFT, True)
             GtkLayerShell.set_margin(self, GtkLayerShell.Edge.LEFT, max(6, int(center - width / 2)))
 
-        self.connect("key-press-event", lambda _w, e: e.keyval == 0xff1b and Gtk.main_quit())
+        self.connect("key-press-event", lambda _w, e: e.keyval == 0xff1b and self.close())
         self.connect("destroy", Gtk.main_quit)
+
+    def open_up(self):
+        self.revealer.set_reveal_child(True)
+        # Once open, the panel may grow (Wi-Fi list, power tiles...)
+        GLib.timeout_add(SLIDE_MS + 30, lambda: self.set_size_request(-1, -1) or False)
+        return False
+
+    def close(self):
+        if not self.closing:
+            self.closing = True
+            # Same trick in reverse: freeze the size, slide the content up
+            a = self.get_allocation()
+            self.set_size_request(a.width, a.height)
+            self.revealer.set_reveal_child(False)
+            GLib.timeout_add(SLIDE_MS + 20, Gtk.main_quit)
+        return True
 
 
 def main():
     mode = sys.argv[1] if len(sys.argv) > 1 else ""
-    if mode not in ("media", "calendar", "menu"):
-        sys.exit("usage: panel.py media|calendar|menu")
+    if mode not in ("media", "calendar", "menu", "network"):
+        sys.exit("usage: panel.py media|calendar|menu|network")
     take_over(mode)
-    GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGTERM, Gtk.main_quit)
 
     # Palette (`theme`) first, so the CSS can use @bg0, @fg, @accent...
     try:
@@ -715,8 +937,14 @@ def main():
     Gtk.StyleContext.add_provider_for_screen(
         Gtk.Window().get_screen(), provider, Gtk.STYLE_PROVIDER_PRIORITY_USER + 1)
 
-    Backdrop().show_all()
-    Panel(mode).show_all()
+    backdrop = Backdrop()
+    backdrop.show_all()
+    panel = Panel(mode)
+    backdrop.on_click = panel.close
+    # Closed by the bar (same button again): slide up first
+    GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGTERM, lambda: panel.close() and False)
+    panel.show_all()
+    GLib.timeout_add(30, panel.open_up)
     Gtk.main()
 
     # Clear the pidfile only if it is still ours

@@ -48,11 +48,9 @@
     "mpris": {
         "format": "{player_icon}  {player} · {title}",
         "max-length": 60,
-        "format-paused": "",
-        "format-stopped": "",
         "player-icons": {
             "default": "",
-            "firefox": "",
+            "firefox": "\ue007",
             "chromium": "",
             "spotify": ""
         },
@@ -69,10 +67,35 @@
         "on-click": "~/.config/waybar/panel.py calendar"
     },
 
-    // Battery, tray and general menu share the right island
+    // System stats, network, battery, tray and the general menu share the
+    // right island
     "group/right": {
         "orientation": "horizontal",
-        "modules": ["battery", "tray", "custom/menu"]
+        "modules": ["cpu", "memory", "battery", "network", "tray", "custom/menu"]
+    },
+
+    "cpu": {
+        "format": "<span font_size='10pt' rise='-1pt'>\uf2db</span> {usage}%",
+        "interval": 5,
+        "tooltip": false
+    },
+
+    "memory": {
+        "format": "<span font_size='10pt' rise='-1pt'>\uf538</span> {used:0.1f}G",
+        "interval": 5,
+        "tooltip": false
+    },
+
+    // Cable or Wi-Fi at a glance; click: network popup (Wi-Fi list open)
+    "network": {
+        "format-ethernet": "<span font_size='10pt' rise='-1pt'>\uf0e8</span>",
+        "format-wifi": "<span font_size='10pt' rise='-1pt'>\uf1eb</span>",
+        "format-linked": "<span font_size='10pt' rise='-1pt'>\uf0e8</span>",
+        "format-disconnected": "<span font_size='10pt' rise='-1pt'>\uf00d</span>",
+        "tooltip-format-ethernet": "Wired · {ifname} · {ipaddr}",
+        "tooltip-format-wifi": "{essid} · {signalStrength}% · {ipaddr}",
+        "tooltip-format-disconnected": "Disconnected",
+        "on-click": "~/.config/waybar/panel.py network"
     },
 
     // Only shows up on machines with a battery (laptops); a bolt while

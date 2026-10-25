@@ -2,3 +2,6 @@
 background-color=#{{surface}}
 text-color=#{{fg}}
 progress-color=over #{{line}}
+
+[category=osd]
+progress-color=over #{{off}}

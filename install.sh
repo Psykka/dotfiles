@@ -27,13 +27,13 @@ wl-clipboard cliphist mate-polkit stow wireplumber wdisplays kanshi blueman
 papirus-icon-theme starship eza bat"
 
 case $distro in
-    fedora) packages="$common mako sway-systemd libnotify pulseaudio-utils
+    fedora) packages="$common mako sway-systemd libnotify pulseaudio-utils NetworkManager
         gtk-layer-shell python3-gobject python3-i3ipc jetbrains-mono-fonts-all rsms-inter-fonts
         google-noto-color-emoji-fonts fontawesome-6-free-fonts
         fontawesome-6-brands-fonts adwaita-mono-fonts papirus-icon-theme-dark" ;;
-    arch) packages="$common mako libnotify libpulse gtk-layer-shell python-gobject python-i3ipc
+    arch) packages="$common mako libnotify libpulse networkmanager gtk-layer-shell python-gobject python-i3ipc
         ttf-jetbrains-mono inter-font noto-fonts-emoji otf-font-awesome" ;;
-    debian) packages="$common sway mako-notifier libnotify-bin pulseaudio-utils
+    debian) packages="$common sway mako-notifier libnotify-bin pulseaudio-utils network-manager
         gir1.2-gtklayershell-0.1 gir1.2-gtk-3.0 python3-gi python3-i3ipc fonts-jetbrains-mono
         fonts-inter fonts-noto-color-emoji fonts-font-awesome" ;;
 esac

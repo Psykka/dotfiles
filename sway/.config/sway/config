@@ -126,5 +126,3 @@ for_window [app_id="polkit-mate-authentication-agent-1"] floating enable
 for_window [app_id="xdg-desktop-portal-gtk"] floating enable
 for_window [app_id="org.pulseaudio.pavucontrol"] floating enable
 for_window [title="^Picture-in-Picture$"] floating enable, sticky enable
-for_window [app_id="(?i)wdisplays"] floating enable, resize set 1000 680, move position center
-for_window [app_id="(?i)blueman"] floating enable
