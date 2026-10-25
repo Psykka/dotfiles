@@ -9,7 +9,7 @@ set -eu
 
 cd "$(dirname "$0")"
 REPO=$(pwd)
-STOW_PACKAGES="sway waybar mako fuzzel swaylock alacritty gtk fonts keyboard spotify bin wallpapers launcher"
+STOW_PACKAGES="sway waybar mako fuzzel swaylock alacritty gtk fonts keyboard spotify bin wallpapers launcher bash"
 
 say() { printf '\n\033[1m==> %s\033[0m\n' "$*"; }
 
@@ -24,7 +24,7 @@ esac
 # Same name everywhere
 common="swaybg swaylock swayidle waybar playerctl fuzzel alacritty grim slurp
 wl-clipboard cliphist mate-polkit stow wireplumber wdisplays kanshi blueman
-papirus-icon-theme"
+papirus-icon-theme starship eza bat"
 
 case $distro in
     fedora) packages="$common mako sway-systemd libnotify pulseaudio-utils
@@ -49,7 +49,10 @@ available() {
 
 say "Installing packages ($distro)"
 [ $distro = debian ] && sudo apt-get update -q
-[ $distro = fedora ] && sudo dnf copr enable -y swayfx/swayfx
+if [ $distro = fedora ]; then
+    sudo dnf copr enable -y swayfx/swayfx
+    sudo dnf copr enable -y atim/starship
+fi
 found="" missing=""
 for p in $packages; do
     if available "$p"; then found="$found $p"; else missing="$missing $p"; fi
@@ -90,6 +93,11 @@ for pkg in $STOW_PACKAGES; do
     done
     stow -t "$HOME" "$pkg"
 done
+
+# Fedora's ~/.bashrc already loads ~/.bashrc.d; elsewhere, add that
+if ! grep -q 'bashrc.d' "$HOME/.bashrc" 2>/dev/null; then
+    printf '\n# Shell config from ~/dotfiles (bash package)\nfor rc in ~/.bashrc.d/*.sh; do [ -f "$rc" ] && . "$rc"; done\nunset rc\n' >> "$HOME/.bashrc"
+fi
 
 say "Building the grayscale icon theme"
 "$HOME/.local/bin/make-mono-icons" || echo "Skipped: Papirus is not installed"
