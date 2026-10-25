@@ -19,7 +19,7 @@ window#waybar {
 }
 
 /* notch.svg draws the curved sides (12px each); the middle is plain color */
-#left, #mpris, #clock, #right {
+#left, #mpris, #clock, #right, #custom-updates {
     background-color: @island;
     background-clip: padding-box;
     border-style: solid;
@@ -74,6 +74,21 @@ window#waybar {
     from { margin-top: -32px; margin-bottom: 32px; opacity: 0; }
     to { margin-top: 0; margin-bottom: 0; opacity: 1; }
 }
+
+/* Updates island: slides down when there are updates and back up when
+   there are none (same trick as the media island) */
+#custom-updates {
+    margin-right: 8px;
+    color: @fg;
+    transition: margin-top 260ms ease, margin-bottom 260ms ease, opacity 260ms ease, color 150ms ease;
+}
+#custom-updates:hover { color: @hi; }
+#custom-updates.none {
+    margin-top: -32px;
+    margin-bottom: 32px;
+    opacity: 0;
+}
+#custom-updates.updates, #custom-updates.release { animation: media-in 300ms ease-out; }
 
 #cpu, #memory { padding: 0 6px; color: @fg; }
 #network { padding: 0 8px 0 6px; color: @fg; }

@@ -82,6 +82,9 @@ case $distro in
         sudo apt-get install -y $found ;;
 esac
 
+say "Package manager settings"
+SUDO=sudo system/install-system.sh
+
 say "Linking configs"
 backup="$HOME/.dotfiles-backup/$(date +%Y-%m-%d_%H-%M-%S)"
 for pkg in $STOW_PACKAGES; do

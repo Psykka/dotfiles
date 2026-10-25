@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Bar popups: mini media player, calendar + notifications, general menu.
 
-Usage: panel.py media|calendar|menu|network
+Usage: panel.py media|calendar|menu|network|updates
 Running it again with the same mode closes it; another mode replaces it.
 """
 import hashlib
@@ -39,6 +39,7 @@ ICON = {
     "reboot": "", "power": "", "keyboard": "",
     "down": "\uf078", "right": "\uf054", "check": "\uf00c",
     "wifi": "\uf1eb", "ethernet": "\uf0e8", "offline": "\uf00d",
+    "upgrade": "\uf35b",
     "display": "\uf108", "bluetooth": "\uf293",
 }
 
@@ -743,6 +744,76 @@ class NetworkRow(Gtk.Box):
         threading.Thread(target=work, daemon=True).start()
 
 
+UPDATES = os.path.expanduser("~/.config/waybar/updates.py")
+
+
+class Updates(Gtk.Box):
+    """Pending updates (updates.py): a new release first, then the packages,
+    and the choice to update now in a terminal."""
+
+    def __init__(self):
+        super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        self.set_size_request(340, -1)
+        try:
+            data = json.loads(run(UPDATES, "list") or "{}")
+        except json.JSONDecodeError:
+            data = {}
+        packages, release = data.get("packages", []), data.get("release")
+        self.pack_start(label("UPDATES", ["heading"]), False, False, 0)
+
+        if release:
+            card = Gtk.Box(spacing=10)
+            card.get_style_context().add_class("notif")
+            card.pack_start(label(ICON["upgrade"], ["icon"], xalign=0.5, width=2), False, False, 0)
+            names = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+            names.pack_start(label(f"Fedora {release} is available", ["title"]), False, False, 0)
+            names.pack_start(label("Upgrade the whole system, then reboot", ["muted", "small"]), False, False, 0)
+            card.pack_start(names, True, True, 0)
+            up = Gtk.Button(label="Upgrade")
+            up.get_style_context().add_class("yes")
+            up.set_valign(Gtk.Align.CENTER)
+            up.connect("clicked", lambda _: self.start("release"))
+            card.pack_end(up, False, False, 0)
+            self.pack_start(card, False, False, 0)
+
+        if packages:
+            self.pack_start(label(f"{len(packages)} package{'s' if len(packages) != 1 else ''} to update",
+                                  ["muted", "small"]), False, False, 0)
+            scroll = Gtk.ScrolledWindow()
+            scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+            scroll.set_min_content_height(min(240, 26 * len(packages)))
+            scroll.set_max_content_height(240)
+            rows = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+            for p in packages:
+                row = Gtk.Box(spacing=12)
+                row.pack_start(label(p["name"], ellipsize=True), True, True, 0)
+                row.pack_end(label(p["version"], ["muted", "small"], xalign=1.0), False, False, 0)
+                rows.pack_start(row, False, False, 2)
+            scroll.add(rows)
+            self.pack_start(scroll, False, False, 0)
+        elif not release:
+            self.pack_start(label("Everything is up to date", ["muted"]), False, False, 0)
+
+        buttons = Gtk.Box(spacing=8, homogeneous=True)
+        later = Gtk.Button(label="Not now")
+        later.connect("clicked", lambda _: self.close_panel())
+        buttons.pack_start(later, True, True, 0)
+        if packages:
+            now = Gtk.Button(label="Update now")
+            now.get_style_context().add_class("yes")
+            now.connect("clicked", lambda _: self.start("packages"))
+            buttons.pack_start(now, True, True, 0)
+        self.pack_start(buttons, False, False, 0)
+
+    def close_panel(self):
+        top = self.get_toplevel()
+        top.close() if hasattr(top, "revealer") else Gtk.main_quit()
+
+    def start(self, kind):
+        spawn(UPDATES, "run", kind)
+        self.close_panel()
+
+
 class Network(Gtk.Box):
     """Network popup from the bar's network icon: Wi-Fi list already open."""
 
@@ -876,7 +947,7 @@ class Panel(Gtk.Window):
         GtkLayerShell.set_keyboard_mode(self, GtkLayerShell.KeyboardMode.EXCLUSIVE)
         GtkLayerShell.set_anchor(self, GtkLayerShell.Edge.TOP, True)
         GtkLayerShell.set_margin(self, GtkLayerShell.Edge.TOP, 6)
-        if mode in ("menu", "network"):
+        if mode in ("menu", "network", "updates"):
             GtkLayerShell.set_anchor(self, GtkLayerShell.Edge.RIGHT, True)
             GtkLayerShell.set_margin(self, GtkLayerShell.Edge.RIGHT, 6 - SHADOW)
 
@@ -884,7 +955,7 @@ class Panel(Gtk.Window):
 
         frame = Gtk.Box()
         frame.get_style_context().add_class("panel")
-        frame.add({"media": Media, "calendar": Calendar, "menu": Menu, "network": Network}[mode]())
+        frame.add({"media": Media, "calendar": Calendar, "menu": Menu, "network": Network, "updates": Updates}[mode]())
         # Slides down from the bar when it opens, and back up when it closes
         self.revealer = Gtk.Revealer(transition_type=Gtk.RevealerTransitionType.SLIDE_DOWN,
                                      transition_duration=SLIDE_MS)
@@ -929,8 +1000,8 @@ class Panel(Gtk.Window):
 
 def main():
     mode = sys.argv[1] if len(sys.argv) > 1 else ""
-    if mode not in ("media", "calendar", "menu", "network"):
-        sys.exit("usage: panel.py media|calendar|menu|network")
+    if mode not in ("media", "calendar", "menu", "network", "updates"):
+        sys.exit("usage: panel.py media|calendar|menu|network|updates")
     take_over(mode)
 
     # Palette (`theme`) first, so the CSS can use @bg0, @fg, @accent...

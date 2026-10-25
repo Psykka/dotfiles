@@ -16,7 +16,7 @@
     "expand-left": true,
     "modules-left": ["group/left", "custom/space#before-media", "mpris", "custom/space#after-media"],
     "modules-center": ["clock"],
-    "modules-right": ["group/right"],
+    "modules-right": ["custom/updates", "group/right"],
 
     // Tux and the workspaces share the left island
     "group/left": {
@@ -65,6 +65,17 @@
         "format": "{:%a %d %b  %H:%M}",
         "tooltip": false,
         "on-click": "~/.config/waybar/panel.py calendar"
+    },
+
+    // Pending updates: its own island, only while there are some.
+    // Checked every 30 min (updates.py); signal 8 refreshes it after updating
+    "custom/updates": {
+        "exec": "~/.config/waybar/updates.py bar",
+        "return-type": "json",
+        "interval": 1800,
+        "signal": 8,
+        "tooltip": false,
+        "on-click": "~/.config/waybar/panel.py updates"
     },
 
     // System stats, network, battery, tray and the general menu share the
