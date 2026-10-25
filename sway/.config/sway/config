@@ -5,8 +5,8 @@ set $mod Mod4
 # Terminal
 bindsym $mod+Return exec alacritty
 
-# Launcher
-bindsym $mod+space exec fuzzel
+# Launcher, with "System" (the System menu) pinned at the top
+bindsym $mod+space exec ~/.config/sway/launcher.sh
 
 # Screenshot: saved to ~/Pictures/Screenshots and copied to the clipboard
 bindsym Print exec ~/.config/sway/screenshot.sh screen
@@ -19,7 +19,7 @@ bindsym $mod+v exec ~/.config/sway/clipboard.sh
 # Keybindings: list and run
 bindsym $mod+slash exec ~/.config/sway/keys.sh
 
-# Menu: lock, log out, reboot, power off
+# System menu: settings, tools and power
 bindsym $mod+Escape exec ~/.config/sway/menu.sh
 
 # Volume: media keys or Super+=/-, in steps of 5

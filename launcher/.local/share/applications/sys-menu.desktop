@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=System
+Comment=Settings, tools and power: lock, log out, reboot, power off and more
+Icon=preferences-system
+Exec=sysaction
+Keywords=system;settings;power;lock;logout;reboot;shutdown;poweroff;screenshot;clipboard;keybindings;sound;displays;bluetooth;logo;
+Terminal=false
+Categories=System;

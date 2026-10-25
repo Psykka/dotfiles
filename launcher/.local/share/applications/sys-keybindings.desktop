@@ -1,9 +1,0 @@
-[Desktop Entry]
-Type=Application
-Name=Keybindings
-Comment=List and run the sway keybindings
-Icon=preferences-desktop-keyboard-shortcuts
-Exec=sysaction keybindings
-Keywords=shortcuts;keys;help;
-Terminal=false
-Categories=System;

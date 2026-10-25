@@ -9,12 +9,12 @@ sel=$(awk '
     # to the comment above them in the config, then to the raw command.
     function describe(cmd) {
         if (cmd ~ /^exec alacritty/)                  return "Open terminal"
-        if (cmd ~ /^exec fuzzel$/)                    return "App launcher"
+        if (cmd ~ /launcher\.sh$/)                    return "App launcher"
         if (cmd ~ /screenshot\.sh area$/)            return "Screenshot (area)"
         if (cmd ~ /screenshot\.sh/)                  return "Screenshot"
         if (cmd ~ /clipboard\.sh$/)                  return "Clipboard history"
         if (cmd ~ /keys\.sh$/)                        return "Show keybindings"
-        if (cmd ~ /menu\.sh$/)                        return "Power menu"
+        if (cmd ~ /menu\.sh$/)                        return "System menu"
         if (cmd ~ /volume\.sh up$/)                   return "Volume up"
         if (cmd ~ /volume\.sh down$/)                 return "Volume down"
         if (cmd ~ /volume\.sh mute$/)                 return "Mute audio"

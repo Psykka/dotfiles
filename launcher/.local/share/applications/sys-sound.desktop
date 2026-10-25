@@ -1,9 +1,0 @@
-[Desktop Entry]
-Type=Application
-Name=Sound
-Comment=Audio devices and volume
-Icon=audio-volume-high
-Exec=sysaction sound
-Keywords=sound;audio;volume;output;input;microphone;
-Terminal=false
-Categories=System;

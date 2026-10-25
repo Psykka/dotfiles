@@ -1,13 +1,4 @@
 #!/bin/sh
-# One entry point for the launcher's system entries (launcher package),
-# so the .desktop files stay simple: Exec=sysaction <action>
-
-case ${1:-} in
-    lock|logout|reboot|poweroff) exec ~/.config/sway/menu.sh "$1" ;;
-    keybindings)   exec ~/.config/sway/keys.sh ;;
-    clipboard)     exec ~/.config/sway/clipboard.sh ;;
-    screenshot)    exec ~/.config/sway/screenshot.sh area ;;
-    notifications) exec ~/.config/waybar/panel.py calendar ;;
-    sound)         exec ~/.config/waybar/panel.py menu ;;
-    *) echo "usage: sysaction lock|logout|reboot|poweroff|keybindings|clipboard|screenshot|notifications|sound" >&2; exit 1 ;;
-esac
+# Entry point for the launcher's "System" entry (launcher package), so the
+# .desktop file stays simple: Exec=sysaction. Arguments go to menu.sh.
+exec ~/.config/sway/menu.sh "$@"

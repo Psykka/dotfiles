@@ -1,9 +1,0 @@
-[Desktop Entry]
-Type=Application
-Name=Clipboard history
-Comment=Copy an earlier clipboard entry again
-Icon=edit-paste
-Exec=sysaction clipboard
-Keywords=clipboard;copy;paste;
-Terminal=false
-Categories=System;

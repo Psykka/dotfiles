@@ -73,6 +73,6 @@ window#waybar {
 /* No tray icons: no space, so the menu stays centered in its island */
 #tray.empty { padding: 0; }
 
-#custom-tux { padding: 0 6px 0 2px; color: @fg; transition: color 150ms ease; }
-#custom-tux:hover { color: @hi; }
+#custom-distro { padding: 0 6px 0 2px; color: @fg; transition: color 150ms ease; }
+#custom-distro:hover { color: @hi; }
 #custom-menu { padding: 0 4px; color: @fg; }

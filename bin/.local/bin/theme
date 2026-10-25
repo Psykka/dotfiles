@@ -3,6 +3,8 @@
 
 Usage: theme [name]     apply a palette (default: the current one)
        theme current    print the current palette
+       theme get KEY    print one value of the current palette
+       theme set KEY VALUE  change one value (e.g. logo) and apply
 
 Fills the templates in ~/dotfiles/themes/templates with the palette in
 ~/dotfiles/themes/<name>.ini, writes them into the stow packages and
@@ -62,12 +64,30 @@ def reload():
         subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
+def set_value(name, key, value):
+    path = THEMES / f"{name}.ini"
+    lines = path.read_text().splitlines()
+    for i, line in enumerate(lines):
+        if line.split("=", 1)[0].strip() == key and not line.lstrip().startswith("#"):
+            lines[i] = f"{key}={value}"
+            break
+    else:
+        sys.exit(f"theme: {key!r} is not in {path.name}")
+    path.write_text("\n".join(lines) + "\n")
+
+
 def main():
     current = CURRENT.read_text().strip() if CURRENT.exists() else "dark"
     arg = sys.argv[1] if len(sys.argv) > 1 else current
     if arg == "current":
         print(current)
         return
+    if arg == "get" and len(sys.argv) == 3:
+        print(load(current).get(sys.argv[2], ""))
+        return
+    if arg == "set" and len(sys.argv) == 4:
+        set_value(current, sys.argv[2], sys.argv[3])
+        arg = current
     name = arg
     if not (THEMES / f"{name}.ini").exists():
         sys.exit(f"theme: no palette named {name!r} in {THEMES}")

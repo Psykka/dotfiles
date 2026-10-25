@@ -1,9 +1,0 @@
-[Desktop Entry]
-Type=Application
-Name=Log out
-Comment=Leave the sway session
-Icon=system-log-out
-Exec=sysaction logout
-Keywords=logout;exit;session;sway;
-Terminal=false
-Categories=System;

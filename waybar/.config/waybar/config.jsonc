@@ -20,14 +20,16 @@
     // Tux and the workspaces share the left island
     "group/left": {
         "orientation": "horizontal",
-        "modules": ["custom/tux", "sway/workspaces"]
+        "modules": ["custom/distro", "sway/workspaces"]
     },
 
-    // Tux opens the launcher
-    "custom/tux": {
-        "format": "<span font_size='11pt' rise='-1pt'>\uf17c</span>",
+    // Logo of the running distro (distro-icon.sh); opens the launcher
+    "custom/distro": {
+        "exec": "~/.config/waybar/distro-icon.sh",
+        "interval": "once",
+        "format": "<span font_size='11pt' rise='-1pt'>{}</span>",
         "tooltip": false,
-        "on-click": "fuzzel"
+        "on-click": "~/.config/sway/launcher.sh"
     },
 
     // The number of each open workspace; the current one is bright
