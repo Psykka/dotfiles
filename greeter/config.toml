@@ -1,0 +1,13 @@
+# greetd: login screen (installed to /etc/greetd by install-greeter.sh)
+[terminal]
+vt = 1
+
+# tuigreet: pick the user and the session, type the password. The console
+# gets the theme's palette first (vtrgb, from install-greeter.sh), so the 16
+# named colors below are the palette's grays.
+# Monochrome colors; remembers the last user and each user's session;
+# sessions start through a login shell (login-session) so ~/.bash_profile
+# sets PATH for the dotfiles commands.
+[default_session]
+command = "sh -c 'setvtrgb /etc/greetd/vtrgb 2>/dev/null; exec \"$@\"' greeter tuigreet --greeting 'Welcome back' --width 60 --asterisks-char '•' --time --time-format '%A, %d %B  %H:%M' --user-menu --remember --remember-user-session --asterisks --greet-align center --window-padding 2 --container-padding 2 --session-wrapper /usr/local/bin/login-session --power-shutdown 'systemctl poweroff' --power-reboot 'systemctl reboot' --theme 'border=darkgray;title=white;text=gray;prompt=gray;input=white;time=white;action=darkgray;button=white;container=black;greet=gray'"
+user = "greetd"

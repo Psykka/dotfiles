@@ -1,0 +1,5 @@
+#!/bin/sh
+# Runs the chosen session through a login shell, so ~/.bash_profile sets
+# PATH (the dotfiles commands live in ~/.local/bin) like a console login.
+# Installed to /usr/local/bin; tuigreet's --session-wrapper.
+exec bash -l -c 'exec "$@"' login-session "$@"
