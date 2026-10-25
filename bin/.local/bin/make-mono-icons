@@ -140,8 +140,9 @@ def main():
     extra = 0
     for name in wanted_icons():
         for size in SIZES:
+            # In the apps folder: launchers like fuzzel only look there
             dst = OUT / size / "apps"
-            if not dst.is_dir() or any(OUT.glob(f"{size}/*/{name}.svg")) or any(OUT.glob(f"{size}/*/{name}.png")):
+            if not dst.is_dir() or any((dst / f"{name}.{e}").exists() for e in ("svg", "png")):
                 continue
             src = find_elsewhere(name, size)
             if src:
