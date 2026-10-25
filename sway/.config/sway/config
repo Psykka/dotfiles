@@ -103,6 +103,9 @@ exec wl-paste --watch cliphist store
 # Display profiles (~/.config/kanshi/config); does nothing without one
 exec kanshi
 
+# Gorilla-like tiling: new windows halve the focused one, in a spiral
+exec ~/.config/sway/autotiling.py
+
 # Dialogs and small tool windows float, centered
 for_window [window_type="dialog"] floating enable
 for_window [window_role="dialog"] floating enable

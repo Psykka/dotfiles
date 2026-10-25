@@ -28,13 +28,13 @@ papirus-icon-theme"
 
 case $distro in
     fedora) packages="$common mako sway-systemd libnotify pulseaudio-utils
-        gtk-layer-shell python3-gobject jetbrains-mono-fonts-all rsms-inter-fonts
+        gtk-layer-shell python3-gobject python3-i3ipc jetbrains-mono-fonts-all rsms-inter-fonts
         google-noto-color-emoji-fonts fontawesome-6-free-fonts
         fontawesome-6-brands-fonts adwaita-mono-fonts papirus-icon-theme-dark" ;;
-    arch) packages="$common mako libnotify libpulse gtk-layer-shell python-gobject
+    arch) packages="$common mako libnotify libpulse gtk-layer-shell python-gobject python-i3ipc
         ttf-jetbrains-mono inter-font noto-fonts-emoji otf-font-awesome" ;;
     debian) packages="$common sway mako-notifier libnotify-bin pulseaudio-utils
-        gir1.2-gtklayershell-0.1 gir1.2-gtk-3.0 python3-gi fonts-jetbrains-mono
+        gir1.2-gtklayershell-0.1 gir1.2-gtk-3.0 python3-gi python3-i3ipc fonts-jetbrains-mono
         fonts-inter fonts-noto-color-emoji fonts-font-awesome" ;;
 esac
 

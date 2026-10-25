@@ -3,6 +3,9 @@
 
 corner_radius 6
 
+# Windows ease in when they open and out when they close
+animation_duration_ms 200
+
 # Soft shadow under the popups and the launcher. Not on notifications:
 # mako draws them all on one surface, so the shadow would wrap the stack
 shadow_color #000000b0
