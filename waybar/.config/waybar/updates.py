@@ -53,8 +53,17 @@ def run(*cmd):
 
 
 def fedora_packages():
+    """What `sudo dnf upgrade` would install: read the system's package
+    lists (kept fresh by dnf-makecache.timer and by every sudo dnf run).
+    A user's own copy can come from another mirror and disagree with it."""
+    system = ["dnf", "check-upgrade", "--quiet", "--cacheonly", "--setopt=cachedir=/var/cache/libdnf5"]
+    try:
+        r = subprocess.run(system, capture_output=True, text=True, timeout=120)
+        lines = r.stdout if r.returncode in (0, 100) else run("dnf", "check-upgrade", "--quiet")
+    except (OSError, subprocess.TimeoutExpired):
+        lines = run("dnf", "check-upgrade", "--quiet")
     out = []
-    for line in run("dnf", "check-upgrade", "--quiet").splitlines():
+    for line in lines.splitlines():
         parts = line.split()
         if len(parts) == 3 and "." in parts[0]:
             name = parts[0].rsplit(".", 1)[0]
