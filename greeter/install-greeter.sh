@@ -34,6 +34,14 @@ $SUDO sh -c "
     # tuigreet remembers the last user and sessions here
     install -d -o greetd -g greetd /var/cache/tuigreet
 
+    # Unlocks the login keyring with the password typed at login, so apps
+    # (VSCode, Firefox, nm-applet) never ask for it. Fedora's greetd already
+    # does this; Arch's and Debian's don't
+    if ! grep -q pam_gnome_keyring.so /etc/pam.d/greetd; then
+        printf '%s\n' '-auth       optional    pam_gnome_keyring.so' \
+            '-session    optional    pam_gnome_keyring.so auto_start' >> /etc/pam.d/greetd
+    fi
+
     # The login screen is whatever owns the display-manager.service alias,
     # and that is all greetd has in its [Install]. With another greeter
     # (gdm, sddm, lightdm) holding the alias, a plain 'systemctl enable

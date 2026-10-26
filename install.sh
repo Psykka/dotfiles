@@ -24,11 +24,11 @@ esac
 # Same name everywhere
 common="swaybg gtklock swayidle waybar playerctl fuzzel alacritty grim slurp
 wl-clipboard cliphist mate-polkit stow wireplumber wdisplays kanshi
-papirus-icon-theme starship eza bat nnn imv alsa-utils"
+papirus-icon-theme starship eza bat nnn imv alsa-utils gnome-keyring"
 
 case $distro in
     fedora) packages="$common mako sway-systemd libnotify pulseaudio-utils NetworkManager
-        greetd tuigreet
+        greetd tuigreet gnome-keyring-pam
         gtk-layer-shell python3-gobject python3-i3ipc jetbrains-mono-fonts-all rsms-inter-fonts google-noto-sans-cjk-vf-fonts
         google-noto-color-emoji-fonts fontawesome-6-free-fonts
         fontawesome-6-brands-fonts adwaita-mono-fonts papirus-icon-theme-dark" ;;
@@ -36,7 +36,7 @@ case $distro in
         gtk-layer-shell python-gobject python-i3ipc
         ttf-jetbrains-mono inter-font noto-fonts-cjk noto-fonts-emoji otf-font-awesome" ;;
     debian) packages="$common sway mako-notifier libnotify-bin pulseaudio-utils network-manager
-        greetd tuigreet
+        greetd tuigreet libpam-gnome-keyring
         gir1.2-gtklayershell-0.1 gir1.2-gtk-3.0 python3-gi python3-i3ipc fonts-jetbrains-mono
         fonts-inter fonts-noto-cjk fonts-noto-color-emoji fonts-font-awesome" ;;
 esac
@@ -117,6 +117,26 @@ say "Building the grayscale icon theme"
 
 say "Login screen (greetd + tuigreet)"
 SUDO=sudo greeter/install-greeter.sh
+
+say "VSCode"
+# Sway isn't a desktop Electron knows, so VSCode can't tell gnome-keyring
+# is there and asks for "weaker encryption"; point it there directly.
+# argv.json has comments, so the key goes in as text before the last "}".
+argv="$HOME/.vscode/argv.json"
+if ! grep -q '"password-store"' "$argv" 2>/dev/null; then
+    mkdir -p "$(dirname "$argv")"
+    python3 -I - "$argv" <<'PY'
+import pathlib, sys
+path = pathlib.Path(sys.argv[1])
+text = path.read_text() if path.exists() else "{\n}\n"
+head, _, tail = text.rpartition("}")
+head = head.rstrip()
+if not head.endswith(("{", ",")):
+    head += ","
+key = '\t// Sway isn\'t a desktop Electron knows, so point it at gnome-keyring\n\t"password-store": "gnome-libsecret"'
+path.write_text(head + "\n\n" + key + "\n}" + tail)
+PY
+fi
 
 say "Applying the color theme"
 "$HOME/.local/bin/theme" "$(cat themes/current 2>/dev/null || echo dark)"
