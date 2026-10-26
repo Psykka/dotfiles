@@ -85,7 +85,7 @@ run() {
         notifications) exec ~/.config/waybar/panel.py calendar ;;
         sound)         exec ~/.config/waybar/panel.py sound ;;
         displays)      exec ~/.config/waybar/panel.py displays ;;
-        bluetooth)     exec blueman-manager ;;
+        bluetooth)     exec ~/.config/waybar/panel.py bluetooth ;;
         logo)          logo ;;
         lock|logout|reboot|poweroff) power "$1" ;;
         *) echo "menu.sh: unknown action $1" >&2; exit 1 ;;

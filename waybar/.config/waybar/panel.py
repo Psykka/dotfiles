@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Bar popups: mini media player, calendar + notifications, general menu,
-sound, displays.
+sound, displays, bluetooth.
 
-Usage: panel.py media|calendar|menu|network|updates|sound|displays
+Usage: panel.py media|calendar|menu|network|updates|sound|displays|bluetooth
 Running it again with the same mode closes it; another mode replaces it.
 """
 import hashlib
@@ -20,6 +20,7 @@ import urllib.request
 import gi
 
 import audio
+import bluetooth
 import displays
 
 gi.require_version("Gtk", "3.0")
@@ -48,6 +49,8 @@ ICON = {
     "upgrade": "\uf35b",
     "display": "\uf108", "bluetooth": "\uf293",
     "warning": "\uf071", "wrench": "\uf0ad", "headphones": "\uf025",
+    "mouse": "\uf8cc", "gamepad": "\uf11b", "phone": "\uf3cd", "laptop": "\uf109",
+    "trash": "\uf1f8",
 }
 
 CSS = b"""
@@ -1276,6 +1279,262 @@ class Displays(Gtk.Box):
         top.close() if hasattr(top, "revealer") else Gtk.main_quit()
 
 
+# Font Awesome glyph for each BlueZ device icon
+BT_ICON = {
+    "audio-headset": "headphones", "audio-headphones": "headphones", "audio-card": "volume",
+    "input-mouse": "mouse", "input-keyboard": "keyboard", "input-gaming": "gamepad",
+    "phone": "phone", "computer": "laptop",
+}
+
+
+def bt_reason(err):
+    """BlueZ's error, in words."""
+    low = err.lower()
+    if "page-timeout" in low or "page timeout" in low or "host is down" in low or "timeout" in low:
+        return "it is off or out of reach"
+    if "profile-unavailable" in low:
+        return "no sound profile for it (restart audio on the Sound page)"
+    if "authentication" in low or "rejected" in low or "canceled" in low:
+        return "pairing was refused or cancelled"
+    return err
+
+
+class Bluetooth(Gtk.Box):
+    """Bluetooth page of the general menu: turn it on and off, connect the
+    paired devices (with their battery), and pair new ones nearby. Searches
+    for devices, and answers pairing requests, only while the page is on
+    screen."""
+
+    def __init__(self, on_back):
+        super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=16)
+        self.set_size_request(320, -1)
+        self.on_back = on_back
+        self.active = False
+        self.agent = None
+        self.busy = {}  # device path: "Connecting…"
+        self.forgetting = None
+        self.queued = False
+
+        first = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        first.pack_start(page_title("BLUETOOTH", on_back), False, False, 0)
+        toggle = Gtk.Box(spacing=10)
+        names = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        names.pack_start(label("Bluetooth"), False, False, 0)
+        self.visible_as = label(css=["muted", "small"], ellipsize=True)
+        names.pack_start(self.visible_as, False, False, 0)
+        toggle.pack_start(names, True, True, 0)
+        self.switch = Gtk.Switch(valign=Gtk.Align.CENTER)
+        self.switch_handler = self.switch.connect("notify::active", lambda s, _: self.set_power(s.get_active()))
+        toggle.pack_end(self.switch, False, False, 0)
+        first.pack_start(toggle, False, False, 0)
+        # A pairing code to check or type, when a device asks
+        self.prompt = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        self.prompt.get_style_context().add_class("notif")
+        self.prompt.set_no_show_all(True)
+        first.pack_start(self.prompt, False, False, 0)
+        self.pack_start(first, False, False, 0)
+
+        mine = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        mine.pack_start(label("MY DEVICES", ["heading"]), False, False, 0)
+        self.paired = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        mine.pack_start(self.paired, False, False, 0)
+        self.pack_start(mine, False, False, 0)
+
+        self.nearby_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        top = Gtk.Box()
+        top.pack_start(label("OTHER DEVICES", ["heading"]), True, True, 0)
+        self.searching = label(css=["muted", "small"], xalign=1.0)
+        top.pack_end(self.searching, False, False, 0)
+        self.nearby_box.pack_start(top, False, False, 0)
+        self.nearby = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        self.nearby_box.pack_start(self.nearby, False, False, 0)
+        self.nearby_box.set_no_show_all(True)  # only while Bluetooth is on
+        self.pack_start(self.nearby_box, False, False, 0)
+
+        self.message = label(css=["small"])
+        self.message.set_line_wrap(True)
+        self.message.set_no_show_all(True)
+        self.pack_start(self.message, False, False, 0)
+
+        more = Gtk.Button(label="More settings…")
+        more.connect("clicked", lambda _: self.more())
+        self.pack_start(more, False, False, 0)
+
+        bluetooth.watch(self.changed)
+        self.connect("destroy", lambda _: self.deactivate())
+        self.refresh()
+
+    # ------------------------------------------------------------ on screen
+
+    def activate(self):
+        self.active = True
+        self.agent = self.agent or bluetooth.Agent(self.ask)
+        self.refresh()
+        bluetooth.discover(True)
+
+    def deactivate(self):
+        if not self.active:
+            return
+        self.active = False
+        bluetooth.discover(False)
+        if self.agent:
+            self.agent.close()
+            self.agent = None
+
+    def changed(self):
+        # Many signals come at once (and RSSI keeps changing while searching)
+        if not self.queued:
+            self.queued = True
+            GLib.timeout_add(300, self.refresh)
+
+    # --------------------------------------------------------------- lists
+
+    def refresh(self):
+        self.queued = False
+        _, adapter = bluetooth.adapter()
+        on = bool(adapter.get("Powered"))
+        with self.switch.handler_block(self.switch_handler):
+            self.switch.set_active(on)
+        self.switch.set_sensitive(bool(adapter))
+        self.visible_as.set_text(f"Visible as {adapter.get('Alias', '')}" if on else
+                                 "Off" if adapter else "No adapter found")
+        devices = bluetooth.devices() if on else []
+        for box in (self.paired, self.nearby):
+            for c in box.get_children():
+                box.remove(c)
+
+        paired = sorted((d for d in devices if d["paired"]), key=lambda d: (not d["connected"], d["name"].lower()))
+        if not on:
+            self.paired.pack_start(label("Bluetooth is off", ["muted"]), False, False, 0)
+        elif not paired:
+            self.paired.pack_start(label("No paired devices yet", ["muted"]), False, False, 0)
+        for d in paired:
+            self.paired.pack_start(self.device_row(d), False, False, 0)
+
+        # Only devices with a name: the rest are beacons and the like
+        nearby = sorted((d for d in devices if not d["paired"] and d["named"]),
+                        key=lambda d: -(d["rssi"] if d["rssi"] is not None else -999))[:8]
+        self.nearby_box.set_no_show_all(not on)
+        self.nearby_box.show_all() if on else self.nearby_box.hide()
+        self.searching.set_text("Searching…" if adapter.get("Discovering") else "")
+        if on and not nearby:
+            self.nearby.pack_start(label("Put the device in pairing mode", ["muted"]), False, False, 0)
+        for d in nearby:
+            self.nearby.pack_start(self.device_row(d), False, False, 0)
+        self.paired.show_all()
+        self.nearby.show_all()
+        return False
+
+    def device_row(self, d):
+        row = Gtk.Box(spacing=4)
+        b = Gtk.Button()
+        b.get_style_context().add_class("device")
+        inner = Gtk.Box(spacing=10)
+        inner.pack_start(label(ICON[BT_ICON.get(d["icon"], "bluetooth")], ["icon"], xalign=0.5, width=2),
+                         False, False, 0)
+        names = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        names.pack_start(label(d["name"], ["device-title"] if d["connected"] else [], ellipsize=True),
+                         False, False, 0)
+        if d["path"] in self.busy:
+            status = self.busy[d["path"]]
+        elif d["connected"]:
+            status = "Connected" + (f" · {d['battery']}% battery" if d["battery"] is not None else "")
+        else:
+            status = "Not connected" if d["paired"] else "Click to pair"
+        names.pack_start(label(status, ["muted", "small"], ellipsize=True), False, False, 0)
+        inner.pack_start(names, True, True, 0)
+        b.add(inner)
+        b.set_sensitive(d["path"] not in self.busy)
+        b.connect("clicked", lambda _: self.use(d))
+        row.pack_start(b, True, True, 0)
+        if d["paired"]:
+            # Asks once more before forgetting it
+            sure = self.forgetting == d["path"]
+            forget = Gtk.Button(label="Forget?") if sure else icon_button("trash", css=["small"])
+            forget.get_style_context().add_class("small")
+            forget.set_valign(Gtk.Align.CENTER)
+            forget.connect("clicked", lambda _: self.forget(d, sure))
+            row.pack_end(forget, False, False, 0)
+        return row
+
+    # ------------------------------------------------------------- actions
+
+    def set_power(self, on):
+        bluetooth.set_powered(on)
+        if on and self.active:
+            bluetooth.discover(True)
+        self.refresh()
+
+    def use(self, d):
+        path, name = d["path"], d["name"]
+        self.forgetting = None
+        self.say("")
+        if d["connected"]:
+            self.busy[path] = "Disconnecting…"
+            bluetooth.disconnect(path, lambda err: self.done(path, name, err, "disconnect from"))
+        elif d["paired"]:
+            self.busy[path] = "Connecting…"
+            bluetooth.connect(path, lambda err: self.done(path, name, err, "connect to"))
+        else:
+            self.busy[path] = "Pairing…"
+            bluetooth.pair(path, lambda err: self.done(path, name, err, "pair with"))
+        self.refresh()
+
+    def done(self, path, name, err, verb):
+        self.busy.pop(path, None)
+        self.hide_prompt()
+        if err:
+            self.say(f"Couldn't {verb} {name}: {bt_reason(err)}")
+        self.refresh()
+
+    def forget(self, d, sure):
+        self.forgetting = None if sure else d["path"]
+        if sure:
+            bluetooth.forget(d["path"])
+        self.refresh()
+
+    def say(self, text):
+        self.message.set_text(text)
+        self.message.set_visible(bool(text))
+
+    # ------------------------------------------------------------- pairing
+
+    def ask(self, kind, name, code, reply):
+        self.hide_prompt()
+        if not kind:
+            return
+        if kind == "show":
+            self.prompt.pack_start(label(f"Type {code} on {name}, then Enter", ["title"]), False, False, 0)
+        else:
+            self.prompt.pack_start(label(f"Pair with {name}?", ["title"], ellipsize=True), False, False, 0)
+            if code:
+                self.prompt.pack_start(label(f"Check that {name} shows {code}", ["muted", "small"]),
+                                       False, False, 0)
+            buttons = Gtk.Box(spacing=8, homogeneous=True)
+            for text, ok in (("Cancel", False), ("Pair", True)):
+                b = Gtk.Button(label=text)
+                if ok:
+                    b.get_style_context().add_class("yes")
+                b.connect("clicked", lambda _, ok=ok: (reply(ok), self.hide_prompt()))
+                buttons.pack_start(b, True, True, 0)
+            self.prompt.pack_start(buttons, False, False, 0)
+        self.prompt.set_no_show_all(False)
+        self.prompt.show_all()
+
+    def hide_prompt(self):
+        for c in self.prompt.get_children():
+            self.prompt.remove(c)
+        self.prompt.hide()
+
+    def more(self):
+        spawn("blueman-manager")
+        top = self.get_toplevel()
+        top.close() if hasattr(top, "revealer") else Gtk.main_quit()
+
+
+HAS_BLUETOOTH = os.path.isdir("/sys/class/bluetooth") and bool(os.listdir("/sys/class/bluetooth"))
+
+
 class Menu(Gtk.Box):
     # (icon, tile label, confirmation, command)
     POWER = [
@@ -1287,7 +1546,7 @@ class Menu(Gtk.Box):
 
     def __init__(self, page="main"):
         super().__init__()
-        # The main page, and sub pages (Sound, Displays) that slide in from the right
+        # The main page, and sub pages (Sound, Displays, Bluetooth) that slide in from the right
         self.pages = Gtk.Stack(vhomogeneous=False, hhomogeneous=False, transition_duration=200)
         self.add(self.pages)
         main = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=16)
@@ -1297,6 +1556,10 @@ class Menu(Gtk.Box):
         self.pages.add_named(self.sound, "sound")
         self.displays = Displays(on_back=lambda: self.show_page("main"))
         self.pages.add_named(self.displays, "displays")
+        self.bluetooth = None
+        if HAS_BLUETOOTH:
+            self.bluetooth = Bluetooth(on_back=lambda: self.show_page("main"))
+            self.pages.add_named(self.bluetooth, "bluetooth")
 
         main.pack_start(NetworkRow(), False, False, 0)
 
@@ -1313,9 +1576,10 @@ class Menu(Gtk.Box):
         screens = icon_button("display", "Displays", lambda: self.show_page("displays"))
         screens.get_child().pack_end(label(ICON["right"], ["icon", "muted"], xalign=1.0), True, True, 0)
         buttons.pack_start(screens, False, False, 0)
-        if os.listdir("/sys/class/bluetooth") if os.path.isdir("/sys/class/bluetooth") else False:
-            buttons.pack_start(icon_button("bluetooth", "Bluetooth", lambda: self.run_and_quit(
-                ["blueman-manager"])), False, False, 0)
+        if self.bluetooth:
+            bt = icon_button("bluetooth", "Bluetooth", lambda: self.show_page("bluetooth"))
+            bt.get_child().pack_end(label(ICON["right"], ["icon", "muted"], xalign=1.0), True, True, 0)
+            buttons.pack_start(bt, False, False, 0)
         buttons.pack_start(label("SYSTEM", ["heading"]), False, False, 4)
         buttons.pack_start(icon_button("keyboard", "Keybindings", lambda: self.run_and_quit(
             [os.path.expanduser("~/.config/sway/keys.sh")])), False, False, 0)
@@ -1358,6 +1622,8 @@ class Menu(Gtk.Box):
             self.sound.deactivate()
         if page == "displays" and animate:
             self.displays.build()  # changed elsewhere since the menu opened
+        if self.bluetooth:
+            (self.bluetooth.activate if page == "bluetooth" else self.bluetooth.deactivate)()
 
     def toggle_power(self):
         opening = not self.revealer.get_reveal_child()
@@ -1427,7 +1693,7 @@ class Panel(Gtk.Window):
         GtkLayerShell.set_keyboard_mode(self, GtkLayerShell.KeyboardMode.EXCLUSIVE)
         GtkLayerShell.set_anchor(self, GtkLayerShell.Edge.TOP, True)
         GtkLayerShell.set_margin(self, GtkLayerShell.Edge.TOP, 6)
-        if mode in ("menu", "network", "updates", "sound", "displays"):
+        if mode in ("menu", "network", "updates", "sound", "displays", "bluetooth"):
             GtkLayerShell.set_anchor(self, GtkLayerShell.Edge.RIGHT, True)
             GtkLayerShell.set_margin(self, GtkLayerShell.Edge.RIGHT, 6 - SHADOW)
 
@@ -1435,7 +1701,7 @@ class Panel(Gtk.Window):
 
         frame = Gtk.Box()
         frame.get_style_context().add_class("panel")
-        frame.add(Menu(mode) if mode in ("sound", "displays") else
+        frame.add(Menu(mode) if mode in ("sound", "displays", "bluetooth") else
                   {"media": Media, "calendar": Calendar, "menu": Menu, "network": Network, "updates": Updates}[mode]())
         # Slides down from the bar when it opens, and back up when it closes
         self.revealer = Gtk.Revealer(transition_type=Gtk.RevealerTransitionType.SLIDE_DOWN,
@@ -1484,8 +1750,8 @@ class Panel(Gtk.Window):
 
 def main():
     mode = sys.argv[1] if len(sys.argv) > 1 else ""
-    if mode not in ("media", "calendar", "menu", "network", "updates", "sound", "displays"):
-        sys.exit("usage: panel.py media|calendar|menu|network|updates|sound|displays")
+    if mode not in ("media", "calendar", "menu", "network", "updates", "sound", "displays", "bluetooth"):
+        sys.exit("usage: panel.py media|calendar|menu|network|updates|sound|displays|bluetooth")
     take_over(mode)
 
     # Palette (`theme`) first, so the CSS can use @bg0, @fg, @accent...
