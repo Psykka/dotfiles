@@ -9,11 +9,15 @@ Usage: theme [name]     apply a palette (default: the current one)
 Fills the templates in ~/dotfiles/themes/templates with the palette in
 ~/dotfiles/themes/<name>.ini, writes them into the stow packages and
 reloads sway, Waybar and mako. GTK apps pick it up when reopened.
+The VSCode theme ("Dotfiles") is packed and installed when it changes;
+VSCode picks it up after "Developer: Reload Window".
 """
 import pathlib
 import shutil
 import subprocess
 import sys
+import tempfile
+import zipfile
 
 REPO = pathlib.Path(__file__).resolve().parents[3]
 THEMES = REPO / "themes"
@@ -22,6 +26,36 @@ CURRENT = THEMES / "current"
 
 # Templates that only make sense on SwayFX (rounded corners, shadows)
 FX_ONLY = ("sway/.config/sway/fx.d/",)
+
+# VSCode only loads extensions it installed itself, so the theme goes in
+# as a .vsix instead of being linked with stow
+VSCODE_EXT = REPO / "vscode"
+VSCODE_INSTALLED = pathlib.Path.home() / ".vscode/extensions/psykka.dotfiles-theme-1.0.0"
+VSIX_MANIFEST = """<?xml version="1.0" encoding="utf-8"?>
+<PackageManifest Version="2.0.0" xmlns="http://schemas.microsoft.com/developer/vsx-schema/2011">
+  <Metadata>
+    <Identity Language="en-US" Id="dotfiles-theme" Version="1.0.0" Publisher="psykka"/>
+    <DisplayName>Dotfiles</DisplayName>
+    <Categories>Themes</Categories>
+    <Properties>
+      <Property Id="Microsoft.VisualStudio.Code.Engine" Value="^1.70.0"/>
+    </Properties>
+  </Metadata>
+  <Installation>
+    <InstallationTarget Id="Microsoft.VisualStudio.Code"/>
+  </Installation>
+  <Dependencies/>
+  <Assets>
+    <Asset Type="Microsoft.VisualStudio.Code.Manifest" Path="extension/package.json" Addressable="true"/>
+  </Assets>
+</PackageManifest>
+"""
+VSIX_TYPES = """<?xml version="1.0" encoding="utf-8"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension=".json" ContentType="application/json"/>
+  <Default Extension=".vsixmanifest" ContentType="text/xml"/>
+</Types>
+"""
 
 
 def is_swayfx():
@@ -64,6 +98,26 @@ def reload():
         subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
+def install_vscode():
+    if not shutil.which("code"):
+        return
+    files = [p for p in sorted(VSCODE_EXT.rglob("*")) if p.is_file()]
+    # VSCode rewrites package.json when installing, so only the colors are compared
+    colors = [p.relative_to(VSCODE_EXT) for p in files if p.parent.name == "themes"]
+    if all((VSCODE_INSTALLED / c).is_file()
+           and (VSCODE_INSTALLED / c).read_bytes() == (VSCODE_EXT / c).read_bytes() for c in colors):
+        return
+    with tempfile.TemporaryDirectory() as tmp:
+        vsix = pathlib.Path(tmp) / "dotfiles-theme.vsix"
+        with zipfile.ZipFile(vsix, "w") as z:
+            z.writestr("extension.vsixmanifest", VSIX_MANIFEST)
+            z.writestr("[Content_Types].xml", VSIX_TYPES)
+            for p in files:
+                z.write(p, "extension/" + str(p.relative_to(VSCODE_EXT)))
+        subprocess.run(["code", "--install-extension", str(vsix), "--force"],
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
 def set_value(name, key, value):
     path = THEMES / f"{name}.ini"
     lines = path.read_text().splitlines()
@@ -94,6 +148,7 @@ def main():
     render(load(name))
     CURRENT.write_text(name + "\n")
     reload()
+    install_vscode()
     print(f"theme: {name}")
 
 
