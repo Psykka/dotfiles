@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Bar popups: mini media player, calendar + notifications, general menu, sound.
+"""Bar popups: mini media player, calendar + notifications, general menu,
+sound, displays.
 
-Usage: panel.py media|calendar|menu|network|updates|sound
+Usage: panel.py media|calendar|menu|network|updates|sound|displays
 Running it again with the same mode closes it; another mode replaces it.
 """
 import hashlib
@@ -19,12 +20,14 @@ import urllib.request
 import gi
 
 import audio
+import displays
 
 gi.require_version("Gtk", "3.0")
 gi.require_version("Gdk", "3.0")
 gi.require_version("GdkPixbuf", "2.0")
 gi.require_version("GtkLayerShell", "0.1")
-from gi.repository import Gdk, GdkPixbuf, GLib, Gtk, GtkLayerShell, Pango  # noqa: E402
+gi.require_version("PangoCairo", "1.0")
+from gi.repository import Gdk, GdkPixbuf, GLib, Gtk, GtkLayerShell, Pango, PangoCairo  # noqa: E402
 
 RUNTIME = os.environ.get("XDG_RUNTIME_DIR", "/tmp")
 
@@ -80,6 +83,9 @@ button.device:hover { background: @line; }
 .device-title { color: @hi; }
 button.tile:hover { background: @line; }
 .tile .icon { font-size: 16px; }
+button.choice { background: @bg2; padding: 6px 0; }
+button.choice:hover { background: @line; }
+button.choice.yes { background: @accent; color: @bg0; }
 button.small { padding: 2px 8px; font-size: 11px; color: @mute; }
 button.small:hover { color: @hi; }
 button.small:disabled { color: @faint; background: transparent; }
@@ -249,6 +255,18 @@ class Pill(Gtk.Overlay):
             self.icon.set_text(ICON[icon])
         ctx = self.scale.get_style_context()
         (ctx.add_class if muted else ctx.remove_class)("off")
+
+
+def page_title(text, on_back):
+    """Heading of a menu sub page, with a way back to the menu."""
+    back = Gtk.Button(halign=Gtk.Align.START)
+    back.get_style_context().add_class("back")
+    row = Gtk.Box(spacing=6)
+    row.pack_start(label(ICON["left"], ["icon", "heading"]), False, False, 0)
+    row.pack_start(label(text, ["heading"]), False, False, 0)
+    back.add(row)
+    back.connect("clicked", lambda _: on_back())
+    return back
 
 
 def fmt_time(sec):
@@ -866,15 +884,8 @@ class Sound(Gtk.Box):
             self.remove(c)
         # Titled like the other sections, with a way back to the menu;
         # closer to the first section than the sections are to each other
-        back = Gtk.Button(halign=Gtk.Align.START)
-        back.get_style_context().add_class("back")
-        row = Gtk.Box(spacing=6)
-        row.pack_start(label(ICON["left"], ["icon", "heading"]), False, False, 0)
-        row.pack_start(label("SOUND", ["heading"]), False, False, 0)
-        back.add(row)
-        back.connect("clicked", lambda _: self.on_back())
         first = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
-        first.pack_start(back, False, False, 0)
+        first.pack_start(page_title("SOUND", self.on_back), False, False, 0)
         self.pack_start(first, False, False, 0)
         test = Gtk.Button(label="Test")
         test.get_style_context().add_class("small")
@@ -1051,6 +1062,220 @@ class Sound(Gtk.Box):
         threading.Thread(target=work, daemon=True).start()
 
 
+class Arrangement(Gtk.DrawingArea):
+    """The displays as they sit side by side, to scale; clicking one picks it."""
+
+    WIDTH, MAX_HEIGHT, GAP = 288, 110, 4
+
+    def __init__(self, items, main, selected, on_select):
+        super().__init__()
+        self.items, self.main, self.selected, self.on_select = items, main, selected, on_select
+        x0 = min(o["rect"]["x"] for o in items)
+        y0 = min(o["rect"]["y"] for o in items)
+        w = max(o["rect"]["x"] + o["rect"]["width"] for o in items) - x0
+        h = max(o["rect"]["y"] + o["rect"]["height"] for o in items) - y0
+        self.k = min(self.WIDTH / w, self.MAX_HEIGHT / h)
+        self.dx = (self.WIDTH - w * self.k) / 2
+        self.origin = (x0, y0)
+        self.set_size_request(self.WIDTH, int(h * self.k))
+        self.add_events(Gdk.EventMask.BUTTON_PRESS_MASK)
+        self.connect("draw", self.draw)
+        self.connect("button-press-event", self.click)
+
+    def box(self, o):
+        r = o["rect"]
+        return (self.dx + (r["x"] - self.origin[0]) * self.k + self.GAP / 2,
+                (r["y"] - self.origin[1]) * self.k + self.GAP / 2,
+                r["width"] * self.k - self.GAP, r["height"] * self.k - self.GAP)
+
+    def color(self, name):
+        found, c = self.get_style_context().lookup_color(name)
+        return (c.red, c.green, c.blue) if found else (0.5, 0.5, 0.5)
+
+    def draw(self, _w, cr):
+        for o in self.items:
+            x, y, w, h = self.box(o)
+            chosen = o["id"] == self.selected
+            r = min(6, w / 4, h / 4)
+            cr.new_sub_path()
+            cr.arc(x + w - r, y + r, r, -1.5708, 0)
+            cr.arc(x + w - r, y + h - r, r, 0, 1.5708)
+            cr.arc(x + r, y + h - r, r, 1.5708, 3.1416)
+            cr.arc(x + r, y + r, r, 3.1416, 4.7124)
+            cr.close_path()
+            cr.set_source_rgb(*self.color("line" if chosen else "bg2"))
+            cr.fill_preserve()
+            cr.set_source_rgb(*self.color("accent" if chosen else "faint"))
+            cr.set_line_width(1.5 if chosen else 1)
+            cr.stroke()
+            text = o["name"] + ("\nMain" if o["id"] == self.main and len(self.items) > 1 else "")
+            layout = self.create_pango_layout(text)
+            layout.set_alignment(Pango.Alignment.CENTER)
+            layout.set_width(int(max(1, w - 8) * Pango.SCALE))
+            layout.set_ellipsize(Pango.EllipsizeMode.END)
+            th = layout.get_pixel_size()[1]
+            cr.move_to(x + 4, y + (h - th) / 2)
+            cr.set_source_rgb(*self.color("hi" if chosen else "mute"))
+            PangoCairo.show_layout(cr, layout)
+        return False
+
+    def click(self, _w, e):
+        for o in self.items:
+            x, y, w, h = self.box(o)
+            if x <= e.x <= x + w and y <= e.y <= y + h:
+                self.on_select(o["id"])
+        return True
+
+
+class Displays(Gtk.Box):
+    """Displays page of the general menu: the arrangement (click a display to
+    pick it), which one is the main display, and the resolution and scale of
+    each. Saved for the next login by displays.py."""
+
+    def __init__(self, on_back):
+        super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=16)
+        self.set_size_request(320, -1)
+        self.on_back = on_back
+        self.selected = None
+        self.build()
+
+    def build(self):
+        for c in self.get_children():
+            self.remove(c)
+        items = displays.outputs()
+        first = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        first.pack_start(page_title("DISPLAYS", self.on_back), False, False, 0)
+        self.pack_start(first, False, False, 0)
+        if not items:
+            first.pack_start(label("No display found", ["muted"]), False, False, 0)
+            self.show_all()
+            return
+        main = displays.primary(items)
+        if not any(o["id"] == self.selected for o in items):
+            self.selected = main
+        o = next(o for o in items if o["id"] == self.selected)
+        many = len(items) > 1
+
+        first.pack_start(Arrangement(items, main, self.selected, self.pick), False, False, 0)
+        if many:
+            order = [x["id"] for x in sorted(items, key=lambda x: x["rect"]["x"])]
+            i = order.index(o["id"])
+            moves = Gtk.Box(spacing=8, homogeneous=True)
+            for step, text in ((-1, "Move left"), (1, "Move right")):
+                b = icon_button("left" if step < 0 else "right", text, css=["small"],
+                                on_click=lambda s=step: self.act(displays.move, o["id"], s))
+                b.get_child().set_halign(Gtk.Align.CENTER)
+                if step > 0:  # arrow after the text
+                    b.get_child().reorder_child(b.get_child().get_children()[0], -1)
+                b.set_sensitive(0 <= i + step < len(order))
+                moves.pack_start(b, True, True, 0)
+            first.pack_start(moves, False, False, 0)
+
+        # The picked display: its name, and the main display switch
+        section = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        section.pack_start(label("DISPLAY", ["heading"]), False, False, 0)
+        card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        card.get_style_context().add_class("notif")
+        card.pack_start(label(displays.title(o), ["device-title"], ellipsize=True), False, False, 0)
+        card.pack_start(label(f"{o['name']} · {displays.mode_text(o['current_mode'])}",
+                              ["muted", "small"], ellipsize=True), False, False, 0)
+        section.pack_start(card, False, False, 0)
+        if many:
+            row = Gtk.Box(spacing=10, margin_top=4)
+            names = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+            names.pack_start(label("Main display"), False, False, 0)
+            names.pack_start(label("Workspace 1 and the focus at login", ["muted", "small"]), False, False, 0)
+            row.pack_start(names, True, True, 0)
+            switch = Gtk.Switch(active=o["id"] == main, valign=Gtk.Align.CENTER)
+            # There is always one: turn another one on to change it
+            switch.set_sensitive(o["id"] != main)
+            switch.connect("notify::active", lambda s, _: s.get_active() and self.act(displays.set_primary, o["id"]))
+            row.pack_end(switch, False, False, 0)
+            section.pack_start(row, False, False, 0)
+        self.pack_start(section, False, False, 0)
+
+        self.pack_start(self.resolution(o), False, False, 0)
+
+        scale = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        top = Gtk.Box()
+        top.pack_start(label("SCALE", ["heading"]), True, True, 0)
+        top.pack_end(label(f"Looks like {o['rect']['width']}×{o['rect']['height']}",
+                           ["muted", "small"], xalign=1.0), False, False, 0)
+        scale.pack_start(top, False, False, 0)
+        choices = Gtk.Box(spacing=4, homogeneous=True)
+        for s in displays.SCALES:
+            b = Gtk.Button(label=f"{int(s * 100)}%")
+            b.get_style_context().add_class("choice")
+            if abs(o["scale"] - s) < 0.01:
+                b.get_style_context().add_class("yes")
+            b.connect("clicked", lambda _, s=s: self.act(displays.set_scale, o["id"], s))
+            choices.pack_start(b, True, True, 0)
+        scale.pack_start(choices, False, False, 0)
+        self.pack_start(scale, False, False, 0)
+
+        # Rotation and free placement are in wdisplays; `displays.py save` keeps them
+        advanced = Gtk.Button(label="More settings…")
+        advanced.connect("clicked", lambda _: self.advanced())
+        self.pack_start(advanced, False, False, 0)
+        self.show_all()
+
+    def resolution(self, o):
+        """Current mode; clicking opens the list of modes below it."""
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        box.pack_start(label("RESOLUTION", ["heading"]), False, False, 0)
+        picker = Gtk.Button()
+        picker.get_style_context().add_class("device")
+        row = Gtk.Box(spacing=8)
+        row.pack_start(label(displays.mode_text(o["current_mode"]), ["device-title"]), True, True, 0)
+        chevron = label(ICON["right"], ["icon", "muted"], xalign=1.0)
+        row.pack_end(chevron, False, False, 0)
+        picker.add(row)
+        box.pack_start(picker, False, False, 0)
+
+        cur = o["current_mode"]
+        items = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+        for m in displays.modes(o):
+            b = Gtk.Button()
+            line = Gtk.Box(spacing=10)
+            same = (m["width"], m["height"], m["refresh"]) == (cur["width"], cur["height"], cur["refresh"])
+            line.pack_start(label(ICON["check"] if same else "", ["icon"], xalign=0.5, width=2), False, False, 0)
+            line.pack_start(label(displays.mode_text(m)), True, True, 0)
+            b.add(line)
+            b.connect("clicked", lambda _, m=m: self.act(displays.set_mode, o["id"], m))
+            items.pack_start(b, False, False, 0)
+        scroll = Gtk.ScrolledWindow()
+        scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        scroll.set_propagate_natural_height(True)
+        scroll.set_max_content_height(200)
+        scroll.add(items)
+        revealer = Gtk.Revealer(transition_type=Gtk.RevealerTransitionType.SLIDE_DOWN,
+                                transition_duration=200)
+        revealer.add(scroll)
+        box.pack_start(revealer, False, False, 0)
+
+        def toggle():
+            opening = not revealer.get_reveal_child()
+            revealer.set_reveal_child(opening)
+            chevron.set_text(ICON["down" if opening else "right"])
+        picker.connect("clicked", lambda _: toggle())
+        return box
+
+    def pick(self, ident):
+        if ident != self.selected:
+            self.selected = ident
+            self.build()
+
+    def act(self, fn, *args):
+        fn(*args)
+        # Rebuilt once sway has settled the new layout
+        GLib.idle_add(lambda: self.build() or False)
+
+    def advanced(self):
+        spawn("wdisplays")
+        top = self.get_toplevel()
+        top.close() if hasattr(top, "revealer") else Gtk.main_quit()
+
+
 class Menu(Gtk.Box):
     # (icon, tile label, confirmation, command)
     POWER = [
@@ -1062,7 +1287,7 @@ class Menu(Gtk.Box):
 
     def __init__(self, page="main"):
         super().__init__()
-        # The main page, and sub pages (Sound) that slide in from the right
+        # The main page, and sub pages (Sound, Displays) that slide in from the right
         self.pages = Gtk.Stack(vhomogeneous=False, hhomogeneous=False, transition_duration=200)
         self.add(self.pages)
         main = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=16)
@@ -1070,6 +1295,8 @@ class Menu(Gtk.Box):
         self.pages.add_named(main, "main")
         self.sound = Sound(on_back=lambda: self.show_page("main"))
         self.pages.add_named(self.sound, "sound")
+        self.displays = Displays(on_back=lambda: self.show_page("main"))
+        self.pages.add_named(self.displays, "displays")
 
         main.pack_start(NetworkRow(), False, False, 0)
 
@@ -1083,8 +1310,9 @@ class Menu(Gtk.Box):
         sound = icon_button("headphones", "Sound", lambda: self.show_page("sound"))
         sound.get_child().pack_end(label(ICON["right"], ["icon", "muted"], xalign=1.0), True, True, 0)
         buttons.pack_start(sound, False, False, 0)
-        buttons.pack_start(icon_button("display", "Displays", lambda: self.run_and_quit(
-            ["wdisplays"])), False, False, 0)
+        screens = icon_button("display", "Displays", lambda: self.show_page("displays"))
+        screens.get_child().pack_end(label(ICON["right"], ["icon", "muted"], xalign=1.0), True, True, 0)
+        buttons.pack_start(screens, False, False, 0)
         if os.listdir("/sys/class/bluetooth") if os.path.isdir("/sys/class/bluetooth") else False:
             buttons.pack_start(icon_button("bluetooth", "Bluetooth", lambda: self.run_and_quit(
                 ["blueman-manager"])), False, False, 0)
@@ -1128,6 +1356,8 @@ class Menu(Gtk.Box):
             self.sound.activate()
         else:
             self.sound.deactivate()
+        if page == "displays" and animate:
+            self.displays.build()  # changed elsewhere since the menu opened
 
     def toggle_power(self):
         opening = not self.revealer.get_reveal_child()
@@ -1197,7 +1427,7 @@ class Panel(Gtk.Window):
         GtkLayerShell.set_keyboard_mode(self, GtkLayerShell.KeyboardMode.EXCLUSIVE)
         GtkLayerShell.set_anchor(self, GtkLayerShell.Edge.TOP, True)
         GtkLayerShell.set_margin(self, GtkLayerShell.Edge.TOP, 6)
-        if mode in ("menu", "network", "updates", "sound"):
+        if mode in ("menu", "network", "updates", "sound", "displays"):
             GtkLayerShell.set_anchor(self, GtkLayerShell.Edge.RIGHT, True)
             GtkLayerShell.set_margin(self, GtkLayerShell.Edge.RIGHT, 6 - SHADOW)
 
@@ -1205,7 +1435,7 @@ class Panel(Gtk.Window):
 
         frame = Gtk.Box()
         frame.get_style_context().add_class("panel")
-        frame.add(Menu("sound") if mode == "sound" else
+        frame.add(Menu(mode) if mode in ("sound", "displays") else
                   {"media": Media, "calendar": Calendar, "menu": Menu, "network": Network, "updates": Updates}[mode]())
         # Slides down from the bar when it opens, and back up when it closes
         self.revealer = Gtk.Revealer(transition_type=Gtk.RevealerTransitionType.SLIDE_DOWN,
@@ -1254,8 +1484,8 @@ class Panel(Gtk.Window):
 
 def main():
     mode = sys.argv[1] if len(sys.argv) > 1 else ""
-    if mode not in ("media", "calendar", "menu", "network", "updates", "sound"):
-        sys.exit("usage: panel.py media|calendar|menu|network|updates|sound")
+    if mode not in ("media", "calendar", "menu", "network", "updates", "sound", "displays"):
+        sys.exit("usage: panel.py media|calendar|menu|network|updates|sound|displays")
     take_over(mode)
 
     # Palette (`theme`) first, so the CSS can use @bg0, @fg, @accent...

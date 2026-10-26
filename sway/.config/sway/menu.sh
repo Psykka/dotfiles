@@ -84,7 +84,7 @@ run() {
         screenshot)    exec ~/.config/sway/screenshot.sh area ;;
         notifications) exec ~/.config/waybar/panel.py calendar ;;
         sound)         exec ~/.config/waybar/panel.py sound ;;
-        displays)      exec wdisplays ;;
+        displays)      exec ~/.config/waybar/panel.py displays ;;
         bluetooth)     exec blueman-manager ;;
         logo)          logo ;;
         lock|logout|reboot|poweroff) power "$1" ;;

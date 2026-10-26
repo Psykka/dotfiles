@@ -117,7 +117,12 @@ exec playerctld daemon
 exec ~/.config/waybar/audio.py watch
 exec wl-paste --watch cliphist store
 
-# Display profiles (~/.config/kanshi/config); does nothing without one
+# Displays: main display, resolution, scale and order, set in the menu's
+# Displays page (written by ~/.config/waybar/displays.py; none until then)
+include ~/.local/state/sway-displays.conf
+
+# Display profiles (~/.config/kanshi/config); does nothing without one, and
+# overrides the Displays page when there is one
 exec kanshi
 
 # Gorilla-like tiling: new windows halve the focused one, in a spiral
