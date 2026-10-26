@@ -1,0 +1,15 @@
+{
+    "claudeCode.preferredLocation": "panel",
+    "workbench.colorTheme": "Dotfiles",
+    "workbench.iconTheme": "material-icon-theme",
+    "editor.fontFamily": "'Mononoki Nerd Font Mono', 'Droid Sans Mono', 'monospace'",
+    "editor.fontLigatures": false,
+    "terminal.integrated.fontFamily": "'Mononoki Nerd Font Mono'",
+    "terminal.integrated.gpuAcceleration": "canvas",
+    "editor.minimap.enabled": false,
+    "terminal.integrated.stickyScroll.enabled": false,
+    "editor.stickyScroll.enabled": false,
+    "claudeCode.hideOnboarding": true,
+    "window.titleBarStyle": "native",
+    "window.menuBarVisibility": "toggle"
+}

@@ -29,7 +29,7 @@ FX_ONLY = ("sway/.config/sway/fx.d/",)
 
 # VSCode only loads extensions it installed itself, so the theme goes in
 # as a .vsix instead of being linked with stow
-VSCODE_EXT = REPO / "vscode"
+VSCODE_EXT = REPO / "vscode-theme"
 VSCODE_INSTALLED = pathlib.Path.home() / ".vscode/extensions/psykka.dotfiles-theme-1.0.0"
 VSIX_MANIFEST = """<?xml version="1.0" encoding="utf-8"?>
 <PackageManifest Version="2.0.0" xmlns="http://schemas.microsoft.com/developer/vsx-schema/2011">

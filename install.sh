@@ -9,7 +9,7 @@ set -eu
 
 cd "$(dirname "$0")"
 REPO=$(pwd)
-STOW_PACKAGES="sway waybar mako fuzzel gtklock alacritty gtk fonts keyboard spotify bin wallpapers launcher bash imv"
+STOW_PACKAGES="sway waybar mako fuzzel gtklock alacritty gtk fonts keyboard spotify bin wallpapers launcher bash imv vscode"
 
 say() { printf '\n\033[1m==> %s\033[0m\n' "$*"; }
 
@@ -136,6 +136,10 @@ if not head.endswith(("{", ",")):
 key = '\t// Sway isn\'t a desktop Electron knows, so point it at gnome-keyring\n\t"password-store": "gnome-libsecret"'
 path.write_text(head + "\n\n" + key + "\n}" + tail)
 PY
+fi
+# The icon theme the settings (vscode package) ask for
+if command -v code >/dev/null; then
+    code --install-extension pkief.material-icon-theme >/dev/null
 fi
 
 say "Applying the color theme"
