@@ -23,7 +23,7 @@ esac
 
 # Same name everywhere
 common="swaybg gtklock swayidle waybar playerctl fuzzel alacritty grim slurp
-wl-clipboard cliphist mate-polkit stow wireplumber wdisplays kanshi blueman
+wl-clipboard cliphist mate-polkit stow wireplumber wdisplays kanshi
 papirus-icon-theme starship eza bat nnn imv alsa-utils"
 
 case $distro in

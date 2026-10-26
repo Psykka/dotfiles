@@ -1356,10 +1356,6 @@ class Bluetooth(Gtk.Box):
         self.message.set_no_show_all(True)
         self.pack_start(self.message, False, False, 0)
 
-        more = Gtk.Button(label="More settings…")
-        more.connect("clicked", lambda _: self.more())
-        self.pack_start(more, False, False, 0)
-
         bluetooth.watch(self.changed)
         self.connect("destroy", lambda _: self.deactivate())
         self.refresh()
@@ -1525,11 +1521,6 @@ class Bluetooth(Gtk.Box):
         for c in self.prompt.get_children():
             self.prompt.remove(c)
         self.prompt.hide()
-
-    def more(self):
-        spawn("blueman-manager")
-        top = self.get_toplevel()
-        top.close() if hasattr(top, "revealer") else Gtk.main_quit()
 
 
 HAS_BLUETOOTH = os.path.isdir("/sys/class/bluetooth") and bool(os.listdir("/sys/class/bluetooth"))
