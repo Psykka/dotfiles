@@ -44,7 +44,12 @@ def steps(mode):
         local = local_wallpaper()
         return [
             (0, "filters open", lambda w: w.toggle_filters(), True),
-            (800, "filters close", lambda w: w.toggle_filters(), True),
+            (800, "search words", lambda w: (w.entry.set_text("mountain"), w.search()), False),
+            # A bad key is never stored; with a key already there, nothing
+            (3000, "bad API key", lambda w: panel.wallpaper.api_key()
+             or (w.key_entry.set_text("not-a-key"), w.save_key()), False),
+            (3000, "clear words", lambda w: (w.entry.set_text(""), w.search()), False),
+            (3000, "filters close", lambda w: w.toggle_filters(), True),
             (800, "pick from Wallhaven", lambda w: w.pick(("wallhaven", w.results["items"][0])), False),
             (500, "next page", lambda w: w.search(2), False),
             (3000, "tab Downloaded", lambda w: w.show_tab("downloaded"), False),

@@ -177,6 +177,7 @@ button.chip.yes { background: transparent; border-color: @accent; }
 button.filter { padding: 2px 8px; font-size: 11px; background: @bg2; }
 button.filter:hover { background: @line; }
 button.filter.yes { background: @accent; color: @bg0; }
+button.filter:disabled { color: @faint; background: @bg1; }
 button.tab { padding: 2px 10px; font-size: 11px; color: @mute; }
 button.tab.on { background: @bg2; color: @hi; }
 .tuning:disabled { opacity: 0.5; }
@@ -2946,6 +2947,7 @@ class Wallpapers(Gtk.Box):
         self.base = wallpaper.base_palette()
         self.saved_path, self.saved_colors = wallpaper.saved()
         self.filters = dict(wallpaper.FILTERS)
+        self.last_q = ""
         self.results = {"items": [], "page": 1, "last": 1, "total": 0, "seed": None}
         self.query = 0
         self.local_page = 0
@@ -3087,8 +3089,11 @@ class Wallpapers(Gtk.Box):
         self.paints = []
         filters.pack_start(self.choice_row("Type", [("general", "General"), ("anime", "Anime"),
                                                     ("people", "People")]), False, False, 0)
-        purity = [("sfw", "SFW"), ("sketchy", "Sketchy")] + ([("nsfw", "NSFW")] if wallpaper.api_key() else [])
-        filters.pack_start(self.choice_row("Content", purity), False, False, 0)
+        # NSFW is always there (so the row keeps its size), but only works
+        # with an API key
+        purity = self.choice_row("Content", [("sfw", "SFW"), ("sketchy", "Sketchy"), ("nsfw", "NSFW")])
+        self.nsfw = purity.buttons["nsfw"]
+        filters.pack_start(purity, False, False, 0)
         filters.pack_start(self.choice_row("Sort", wallpaper.SORTS, "sorting"), False, False, 0)
         self.range_row = self.choice_row("Top of", wallpaper.RANGES, "range")
         self.range_row.set_sensitive(self.filters["sorting"] == "toplist")
@@ -3096,6 +3101,7 @@ class Wallpapers(Gtk.Box):
         filters.pack_start(self.choice_row("At least", wallpaper.SIZES, "atleast"), False, False, 0)
         filters.pack_start(self.choice_row("Shape", wallpaper.RATIOS, "ratio"), False, False, 0)
         filters.pack_start(self.color_row(), False, False, 0)
+        filters.pack_start(self.key_row(), False, False, 0)
         self.filter_revealer = Gtk.Revealer(transition_type=Gtk.RevealerTransitionType.SLIDE_DOWN,
                                             transition_duration=200)
         self.filter_revealer.add(filters)
@@ -3148,9 +3154,7 @@ class Wallpapers(Gtk.Box):
                 self.filters[value] = not self.filters[value]
             else:
                 self.filters[key] = value
-            for p in self.paints:
-                p()
-            self.range_row.set_sensitive(self.filters["sorting"] == "toplist")
+            self.repaint()
             self.search()
 
         for value, text in options:
@@ -3160,7 +3164,71 @@ class Wallpapers(Gtk.Box):
             buttons[value] = b
         self.paints.append(paint)
         paint()
+        row.buttons = buttons
         return row
+
+    def repaint(self):
+        for p in self.paints:
+            p()
+        self.range_row.set_sensitive(self.filters["sorting"] == "toplist")
+
+    def key_row(self):
+        """The Wallhaven API key (for NSFW): checked with Wallhaven, then
+        kept in the keyring. The entry and button keep their size whether
+        a key is there or not."""
+        row = Gtk.Box(spacing=4)
+        row.pack_start(label("API key", ["muted", "small"], width=9), False, False, 0)
+        self.key_entry = css(Gtk.Entry(visibility=False, hexpand=True), "search", "small")
+        self.key_entry.connect("activate", lambda _: self.save_key())
+        row.pack_start(self.key_entry, True, True, 0)
+        self.key_button = css(Gtk.Button(), "filter")
+        self.key_button.set_size_request(70, -1)
+        self.key_button.connect("clicked", lambda _: self.save_key())
+        row.pack_start(self.key_button, False, False, 0)
+        self.show_key()
+        return row
+
+    def show_key(self):
+        have = bool(wallpaper.api_key())
+        self.key_entry.set_text("")
+        self.key_entry.set_sensitive(not have)
+        self.key_entry.set_placeholder_text("In the keyring · NSFW on" if have
+                                            else "From wallhaven.cc/settings/account, for NSFW")
+        self.key_button.set_label("Remove" if have else "Save")
+        self.key_button.set_sensitive(True)
+        self.nsfw.set_sensitive(have)
+        self.nsfw.set_tooltip_text(None if have else "Needs a Wallhaven API key (below)")
+        if not have and self.filters["nsfw"]:
+            self.filters["nsfw"] = False
+            self.repaint()
+            self.search()
+
+    def save_key(self):
+        if wallpaper.api_key():
+            wallpaper.set_key("")
+            self.show_key()
+            return
+        key = self.key_entry.get_text().strip()
+        if not key:
+            return
+        self.key_button.set_sensitive(False)
+
+        def work():
+            try:
+                good, err = wallpaper.check_key(key), None
+            except OSError as e:
+                good, err = False, f"Couldn't reach Wallhaven: {getattr(e, 'reason', e)}"
+            if good:
+                wallpaper.set_key(key)
+            GLib.idle_add(done, good, err)
+
+        def done(good, err):
+            self.show_key()
+            if not good:
+                self.key_entry.set_text(key)
+                self.notice(err or "Wallhaven didn't take that key")
+            return False
+        threading.Thread(target=work, daemon=True).start()
 
     def color_row(self):
         row = Gtk.Box(spacing=4)
@@ -3197,6 +3265,16 @@ class Wallpapers(Gtk.Box):
         self.query += 1
         query = self.query
         self.filters["q"] = self.entry.get_text().strip()
+        # The top of a month has few wallpapers on any one subject: words
+        # sort by relevance, and back to the top when they are cleared
+        q = self.filters["q"]
+        if q != self.last_q:
+            if q and self.filters["sorting"] == "toplist":
+                self.filters["sorting"] = "relevance"
+            elif not q and self.filters["sorting"] == "relevance":
+                self.filters["sorting"] = "toplist"
+            self.last_q = q
+            self.repaint()
         f = dict(self.filters)
         seed = self.results.get("seed") if page != 1 else None
         self.loading(True)
@@ -3293,6 +3371,8 @@ class Wallpapers(Gtk.Box):
         self.tuning = css(Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8), "tuning")
         self.tuning.pack_start(label("ACCENT", ["heading"]), False, False, 0)
         self.accent_row = Gtk.Box(spacing=4)
+        # As tall as its chips (22, padding, border and the theme's button) before the colors come
+        self.accent_row.set_size_request(-1, 30)
         self.tuning.pack_start(self.accent_row, False, False, 0)
         self.tuning.pack_start(label("STYLE", ["heading"]), False, False, 4)
         presets = Gtk.Box(spacing=4, homogeneous=True)

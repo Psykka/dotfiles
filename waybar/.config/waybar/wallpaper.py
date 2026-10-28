@@ -10,8 +10,9 @@ what is saved. Saved choices go to ~/.local/state/theme-local.ini through
 
 Downloads go to ~/Pictures/Wallpapers, edited copies to its "edited"
 folder, thumbnails to ~/.cache/wallpaper. Edits need ImageMagick; colors
-use it too when it is there. NSFW results need a Wallhaven API key in
-~/.local/state/wallhaven-key.
+use it too when it is there. NSFW results need a Wallhaven API key, kept
+in the keyring (libsecret; set from the panel's filters) or, without one,
+in ~/.local/state/wallhaven-key.
 
 Usage: wallpaper.py colors FILE      main colors of a picture
        wallpaper.py search [QUERY]   first page of Wallhaven results
@@ -26,13 +27,20 @@ import shutil
 import subprocess
 import sys
 import threading
+import urllib.error
 import urllib.parse
 import urllib.request
 
 import gi
 
 gi.require_version("GdkPixbuf", "2.0")
-from gi.repository import GdkPixbuf  # noqa: E402
+from gi.repository import GdkPixbuf, GLib  # noqa: E402
+
+try:
+    gi.require_version("Secret", "1")
+    from gi.repository import Secret  # noqa: E402
+except (ValueError, ImportError):
+    Secret = None  # no libsecret: the key goes to KEY_FILE
 
 HOME = pathlib.Path.home()
 THEME = str(HOME / ".local/bin/theme")
@@ -44,7 +52,7 @@ KEY_FILE = HOME / ".local/state/wallhaven-key"
 IMAGES = (".jpg", ".jpeg", ".png", ".webp")
 
 API = "https://wallhaven.cc/api/v1/search"
-SORTS = [("date_added", "Latest"), ("toplist", "Top"), ("views", "Views"),
+SORTS = [("relevance", "Relevance"), ("date_added", "Latest"), ("toplist", "Top"), ("views", "Views"),
          ("favorites", "Favorites"), ("random", "Random")]
 RANGES = [("1d", "Day"), ("1w", "Week"), ("1M", "Month"), ("3M", "3 months"), ("1y", "Year")]
 SIZES = [("", "Any"), ("1920x1080", "1080p"), ("2560x1440", "1440p"), ("3840x2160", "4K")]
@@ -91,11 +99,66 @@ def fetch(url, timeout=15):
 
 # --------------------------------------------------------------- wallhaven
 
+KEY_ATTRS = {"service": "wallhaven"}
+_key = None  # read once; the keyring can be slow to answer
+
+
+def _schema():
+    return Secret.Schema.new("org.dotfiles.wallhaven", Secret.SchemaFlags.NONE,
+                             {"service": Secret.SchemaAttributeType.STRING})
+
+
 def api_key():
+    global _key
+    if _key is None:
+        _key = ""
+        if Secret:
+            try:
+                _key = Secret.password_lookup_sync(_schema(), KEY_ATTRS, None) or ""
+            except GLib.Error:
+                pass
+        if not _key:
+            try:
+                _key = KEY_FILE.read_text().strip()
+            except OSError:
+                pass
+    return _key
+
+
+def check_key(key):
+    """Whether Wallhaven takes the key (it answers 401 to a bad one).
+    Raises OSError when Wallhaven can't be reached."""
+    url = API + "?" + urllib.parse.urlencode({"purity": "001", "apikey": key})
     try:
-        return KEY_FILE.read_text().strip()
-    except OSError:
-        return ""
+        with fetch(url):
+            return True
+    except urllib.error.HTTPError as e:
+        if e.code == 401:
+            return False
+        raise
+
+
+def set_key(key):
+    """Keeps the key in the keyring (or KEY_FILE without one); an empty
+    key forgets it."""
+    global _key
+    stored = False
+    if Secret:
+        try:
+            if key:
+                stored = Secret.password_store_sync(_schema(), KEY_ATTRS, Secret.COLLECTION_DEFAULT,
+                                                    "Wallhaven API key", key, None)
+            else:
+                Secret.password_clear_sync(_schema(), KEY_ATTRS, None)
+        except GLib.Error:
+            pass
+    # A key file left from before would come back after removing the key
+    KEY_FILE.unlink(missing_ok=True)
+    if key and not stored:
+        KEY_FILE.parent.mkdir(parents=True, exist_ok=True)
+        KEY_FILE.touch(mode=0o600)
+        KEY_FILE.write_text(key + "\n")
+    _key = key
 
 
 def search(f, page=1, seed=None):

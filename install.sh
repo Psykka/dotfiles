@@ -30,15 +30,15 @@ openvpn openconnect nftables"
 case $distro in
     fedora) packages="$common golang ImageMagick sway-systemd libnotify pulseaudio-utils NetworkManager
         greetd tuigreet gnome-keyring-pam
-        gtk-layer-shell python3-gobject python3-i3ipc jetbrains-mono-fonts-all rsms-inter-fonts google-noto-sans-cjk-vf-fonts
+        gtk-layer-shell python3-gobject python3-i3ipc libsecret jetbrains-mono-fonts-all rsms-inter-fonts google-noto-sans-cjk-vf-fonts
         google-noto-color-emoji-fonts fontawesome-6-free-fonts
         fontawesome-6-brands-fonts adwaita-mono-fonts papirus-icon-theme-dark" ;;
     arch) packages="$common go imagemagick libnotify libpulse networkmanager greetd greetd-tuigreet
-        gtk-layer-shell python-gobject python-i3ipc
+        gtk-layer-shell python-gobject python-i3ipc libsecret
         ttf-jetbrains-mono inter-font noto-fonts-cjk noto-fonts-emoji otf-font-awesome" ;;
     debian) packages="$common golang-go imagemagick sway libnotify-bin pulseaudio-utils network-manager
         greetd tuigreet libpam-gnome-keyring
-        gir1.2-gtklayershell-0.1 gir1.2-gtk-3.0 python3-gi python3-i3ipc fonts-jetbrains-mono
+        gir1.2-gtklayershell-0.1 gir1.2-gtk-3.0 gir1.2-secret-1 python3-gi python3-i3ipc fonts-jetbrains-mono
         fonts-inter fonts-noto-cjk fonts-noto-color-emoji fonts-font-awesome" ;;
 esac
 
