@@ -12,7 +12,8 @@ Usage: dev/panel-sizes.py [MODE ...]        all of them by default
        dev/panel-sizes.py --shots DIR MODE  and a screenshot after each step
 
 The popups really open, on the focused display. The media one plays the
-pretend player (dev/fake-player.py) and leaves any real one alone. The
+pretend player (dev/fake-player.py) and leaves any real one alone; the
+Bluetooth one has pretend devices (dev/fake_bluetooth.py). The
 wallpaper one tries a wallpaper already downloaded on the desktop, then
 discards it: nothing is saved. Not a stow package: nothing here is linked
 into ~.
@@ -93,6 +94,25 @@ def steps(mode):
             (1500, "player quits", lambda _: stop_fake_player(), False),
             (2000, "end", lambda _: None, False),
         ]
+    if mode == "bluetooth":
+        # With the pretend Bluetooth (fake_bluetooth.py), set up in run()
+        import fake_bluetooth as fake
+
+        def dev(path):
+            return next(d for d in fake.devices() if d["path"] == path)
+        return [
+            (0, "ask to forget", lambda m: m.bluetooth.rows["/fake/mouse"].trash.clicked(), False),
+            (500, "don't forget", lambda m: m.bluetooth.rows["/fake/mouse"].back(), False),
+            (500, "connect, and fail", lambda m: m.bluetooth.use(dev("/fake/speaker")), False),
+            (1500, "pair, asks for a code", lambda m: m.bluetooth.use(dev("/fake/phone")), False),
+            (1500, "say yes", lambda m: m.bluetooth.rows["/fake/phone"].answer(True), False),
+            (1500, "a code to type", lambda m: m.bluetooth.ask("show", "Keychron K2", "4321", None), False),
+            (500, "cancelled by it", lambda m: m.bluetooth.ask(None, "", "", None), False),
+            (500, "forget", lambda m: m.bluetooth.forget(dev("/fake/mouse")), False),
+            (1500, "turn off", lambda m: m.bluetooth.switch.set_active(False), False),
+            (800, "turn on", lambda m: m.bluetooth.switch.set_active(True), False),
+            (1000, "end", lambda _: None, False),
+        ]
     if mode == "calendar":
         return [
             (0, "next month", lambda c: c.month.move(1), False),
@@ -120,7 +140,7 @@ def stop_fake_player():
         fake.pop().terminate()
 
 
-MODES = ("wallpaper", "menu", "calendar", "media")
+MODES = ("wallpaper", "menu", "bluetooth", "calendar", "media")
 
 
 def run(mode, shots):
@@ -131,6 +151,11 @@ def run(mode, shots):
     from gi.repository import GLib, Gtk
 
     panel.PLAYERCTL = ["playerctl", "-p", "fakeplayer"]
+    if mode == "bluetooth":
+        sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+        import fake_bluetooth
+        panel.bluetooth = fake_bluetooth
+        panel.HAS_BLUETOOTH = True
     plan = steps(mode)
     if plan is None:
         print(f"{mode}: skipped (nothing to try it with)")

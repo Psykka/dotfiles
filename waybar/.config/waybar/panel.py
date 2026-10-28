@@ -87,6 +87,14 @@ button.yes { background: @accent; color: @bg0; }
 button.tile { background: @bg2; padding: 12px 0; }
 button.device { background: @bg2; padding: 8px 12px; }
 button.device:hover { background: @line; }
+.device-card { background: @bg2; border-radius: 4px; }
+.device-card.asking { padding: 0 8px 0 12px; }
+button.device-main { padding: 0 12px; border-radius: 4px; }
+button.device-side { padding: 0; min-width: 40px; color: @mute; border-radius: 4px; }
+button.device-side:hover { color: @red; }
+.error { color: @red; }
+button.small.danger { background: @red; color: @bg0; }
+button.small.yes { color: @bg0; }
 .device-title { color: @hi; }
 button.tile:hover { background: @line; }
 .tile .icon { font-size: 16px; }
@@ -1471,32 +1479,135 @@ def bt_reason(err):
     """BlueZ's error, in words."""
     low = err.lower()
     if "page-timeout" in low or "page timeout" in low or "host is down" in low or "timeout" in low:
-        return "it is off or out of reach"
+        return "off or out of reach"
     if "profile-unavailable" in low:
-        return "no sound profile for it (restart audio on the Sound page)"
+        return "no sound profile (restart audio on the Sound page)"
     if "authentication" in low or "rejected" in low or "canceled" in low:
         return "pairing was refused or cancelled"
     return err
+
+
+class DeviceRow(Gtk.Stack):
+    """One device as a card of a fixed height. Forgetting it and pairing
+    it (the code to check) happen inside the card, in place of its name,
+    so nothing around it moves."""
+
+    HEIGHT = 48
+
+    def __init__(self, on_use, on_forget):
+        super().__init__(homogeneous=True, transition_type=Gtk.StackTransitionType.CROSSFADE,
+                         transition_duration=150)
+        self.set_size_request(-1, self.HEIGHT)
+        self.device = None
+        self.reply = None
+
+        card = css(Gtk.Box(), "device-card")
+        self.main = css(Gtk.Button(), "device-main")
+        inner = Gtk.Box(spacing=10)
+        self.icon = label(css=["icon"], xalign=0.5, width=2)
+        inner.pack_start(self.icon, False, False, 0)
+        names = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, valign=Gtk.Align.CENTER)
+        self.name = label(ellipsize=True)
+        self.status = label(css=["muted", "small"], ellipsize=True)
+        names.pack_start(self.name, False, False, 0)
+        names.pack_start(self.status, False, False, 0)
+        inner.pack_start(names, True, True, 0)
+        self.main.add(inner)
+        self.main.connect("clicked", lambda _: on_use(self.device))
+        card.pack_start(self.main, True, True, 0)
+        self.trash = icon_button("trash", css=["device-side"], on_click=lambda: self.set_visible_child_name("forget"))
+        self.trash.set_tooltip_text("Forget this device")
+        card.pack_end(self.trash, False, False, 0)
+        self.add_named(card, "main")
+
+        # "Forget X?" with a way out
+        self.question = label(css=["title"], ellipsize=True)
+        forget, _ = self.choice(self.question, "Forget", "danger",
+                                lambda ok: on_forget(self.device) if ok else self.back())
+        self.add_named(forget, "forget")
+        # "Pair with X?" and the code both sides must show
+        pair_text = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, valign=Gtk.Align.CENTER)
+        self.pair_title = label(css=["title"], ellipsize=True)
+        self.pair_code = label(css=["muted", "small"], ellipsize=True)
+        pair_text.pack_start(self.pair_title, False, False, 0)
+        pair_text.pack_start(self.pair_code, False, False, 0)
+        pair, self.pair_ok = self.choice(pair_text, "Pair", "yes", self.answer)
+        self.add_named(pair, "pair")
+
+    def choice(self, text, yes, yes_css, on_answer):
+        card = css(Gtk.Box(spacing=6), "device-card", "asking")
+        card.pack_start(text, True, True, 0)
+        no = css(Gtk.Button(label="Cancel", valign=Gtk.Align.CENTER), "small")
+        no.connect("clicked", lambda _: on_answer(False))
+        ok = css(Gtk.Button(label=yes, valign=Gtk.Align.CENTER), "small", yes_css)
+        ok.connect("clicked", lambda _: on_answer(True))
+        card.pack_end(ok, False, False, 0)
+        card.pack_end(no, False, False, 0)
+        return card, ok
+
+    def update(self, d, status, error=None):
+        """status: the second line; error: the whole story, in its tooltip."""
+        self.device = d
+        self.icon.set_text(ICON[BT_ICON.get(d["icon"], "bluetooth")])
+        self.name.set_text(d["name"])
+        css(self.name, "device-title", on=d["connected"])
+        self.status.set_text(status)
+        self.status.set_tooltip_text(error)
+        css(self.status, "error", on=bool(error))
+        self.main.set_sensitive(not status.endswith("…"))
+        self.trash.set_visible(d["paired"])
+        self.question.set_text(f"Forget {d['name']}?")
+        if not d["paired"] and self.get_visible_child_name() == "forget":
+            self.back()
+
+    def ask(self, kind, code, reply):
+        """A pairing request for this device: a code to check (reply with
+        True/False), or one to type on the device (reply is None)."""
+        self.reply = reply
+        self.pair_title.set_text(f"Pair with {self.device['name']}?" if kind == "confirm"
+                                 else f"Type {code} on it")
+        self.pair_code.set_text(f"Code {code} on both" if kind == "confirm" and code else
+                                "then Enter" if kind == "show" else "It asks to pair")
+        # Typing the code on the device: nothing to answer but Cancel
+        self.pair_ok.set_visible(kind == "confirm")
+        self.set_visible_child_name("pair")
+
+    def answer(self, ok):
+        if self.reply:
+            self.reply(ok)
+        elif not ok and self.device:
+            bluetooth.cancel_pairing(self.device["path"])
+        self.reply = None
+        self.back()
+
+    def back(self):
+        self.set_visible_child_name("main")
 
 
 class Bluetooth(Gtk.Box):
     """Bluetooth page of the general menu: turn it on and off, connect the
     paired devices (with their battery), and pair new ones nearby. Searches
     for devices, and answers pairing requests, only while the page is on
-    screen."""
+    screen.
+
+    The devices sit in a room of a fixed height (it scrolls past that):
+    devices found while searching, or one paired or forgotten, move
+    nothing else on the page."""
+
+    ROWS = 6  # whole cards that fit before scrolling
 
     def __init__(self, on_back):
-        super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=16)
+        super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=12)
         self.set_size_request(320, -1)
         self.on_back = on_back
         self.active = False
         self.agent = None
         self.busy = {}  # device path: "Connecting…"
-        self.forgetting = None
+        self.errors = {}  # device path: what went wrong last time
+        self.rows = {}  # device path: DeviceRow
         self.queued = False
 
-        first = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
-        first.pack_start(page_title("BLUETOOTH", on_back), False, False, 0)
+        self.pack_start(page_title("BLUETOOTH", on_back), False, False, 0)
         toggle = Gtk.Box(spacing=10)
         names = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         names.pack_start(label("Bluetooth"), False, False, 0)
@@ -1506,38 +1617,45 @@ class Bluetooth(Gtk.Box):
         self.switch = Gtk.Switch(valign=Gtk.Align.CENTER)
         self.switch_handler = self.switch.connect("notify::active", lambda s, _: self.set_power(s.get_active()))
         toggle.pack_end(self.switch, False, False, 0)
-        first.pack_start(toggle, False, False, 0)
-        # A pairing code to check or type, when a device asks
-        self.prompt = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
-        self.prompt.get_style_context().add_class("notif")
-        self.prompt.set_no_show_all(True)
-        first.pack_start(self.prompt, False, False, 0)
-        self.pack_start(first, False, False, 0)
+        self.pack_start(toggle, False, False, 0)
 
-        mine = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
-        mine.pack_start(label("MY DEVICES", ["heading"]), False, False, 0)
+        lists = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        lists.pack_start(label("MY DEVICES", ["heading"]), False, False, 0)
         self.paired = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
-        mine.pack_start(self.paired, False, False, 0)
-        self.pack_start(mine, False, False, 0)
-
-        self.nearby_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
-        top = Gtk.Box()
-        top.pack_start(label("OTHER DEVICES", ["heading"]), True, True, 0)
-        self.searching = label(css=["muted", "small"], xalign=1.0)
-        top.pack_end(self.searching, False, False, 0)
-        self.nearby_box.pack_start(top, False, False, 0)
+        self.no_paired = label("No paired devices yet", ["muted", "small"])
+        self.paired.pack_start(self.no_paired, False, False, 0)
+        lists.pack_start(self.paired, False, False, 0)
+        top = Gtk.Box(spacing=8, margin_top=10)
+        top.pack_start(label("OTHER DEVICES", ["heading"]), False, False, 0)
+        self.spinner = Spinner()
+        top.pack_start(self.spinner, False, False, 0)
+        lists.pack_start(top, False, False, 0)
         self.nearby = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
-        self.nearby_box.pack_start(self.nearby, False, False, 0)
-        self.nearby_box.set_no_show_all(True)  # only while Bluetooth is on
-        self.pack_start(self.nearby_box, False, False, 0)
+        self.no_nearby = label("Put the device in pairing mode", ["muted", "small"])
+        self.nearby.pack_start(self.no_nearby, False, False, 0)
+        lists.pack_start(self.nearby, False, False, 0)
 
-        self.message = label(css=["small"])
-        self.message.set_line_wrap(True)
-        self.message.set_no_show_all(True)
-        self.pack_start(self.message, False, False, 0)
+        scroll = Gtk.ScrolledWindow()
+        scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        scroll.add(lists)
+        height = 2 * 30 + self.ROWS * (DeviceRow.HEIGHT + 4)
+        scroll.set_min_content_height(height)
+        scroll.set_max_content_height(height)
+        # Off: a word in the same room
+        self.room = Gtk.Stack(homogeneous=True, transition_type=Gtk.StackTransitionType.CROSSFADE)
+        self.room.add_named(scroll, "on")
+        self.off_text = label(css=["muted"], xalign=0.5)
+        self.room.add_named(self.off_text, "off")
+        self.pack_start(self.room, False, False, 0)
+
+        # A pairing request from a device that is not in the lists
+        self.prompt = DeviceRow(lambda d: None, lambda d: None)
+        self.prompt.set_no_show_all(True)
+        self.pack_start(self.prompt, False, False, 0)
 
         bluetooth.watch(self.changed)
         self.connect("destroy", lambda _: self.deactivate())
+        self.room.show_all()
         self.refresh()
 
     # ------------------------------------------------------------ on screen
@@ -1574,64 +1692,45 @@ class Bluetooth(Gtk.Box):
         self.switch.set_sensitive(bool(adapter))
         self.visible_as.set_text(f"Visible as {adapter.get('Alias', '')}" if on else
                                  "Off" if adapter else "No adapter found")
+        self.off_text.set_text("Bluetooth is off" if adapter else "No Bluetooth adapter")
+        self.room.set_visible_child_name("on" if on else "off")
+        (self.spinner.start if on and adapter.get("Discovering") else self.spinner.stop)()
         devices = bluetooth.devices() if on else []
-        for box in (self.paired, self.nearby):
-            for c in box.get_children():
-                box.remove(c)
 
         paired = sorted((d for d in devices if d["paired"]), key=lambda d: (not d["connected"], d["name"].lower()))
-        if not on:
-            self.paired.pack_start(label("Bluetooth is off", ["muted"]), False, False, 0)
-        elif not paired:
-            self.paired.pack_start(label("No paired devices yet", ["muted"]), False, False, 0)
-        for d in paired:
-            self.paired.pack_start(self.device_row(d), False, False, 0)
-
         # Only devices with a name: the rest are beacons and the like
         nearby = sorted((d for d in devices if not d["paired"] and d["named"]),
                         key=lambda d: -(d["rssi"] if d["rssi"] is not None else -999))[:8]
-        self.nearby_box.set_no_show_all(not on)
-        self.nearby_box.show_all() if on else self.nearby_box.hide()
-        self.searching.set_text("Searching…" if adapter.get("Discovering") else "")
-        if on and not nearby:
-            self.nearby.pack_start(label("Put the device in pairing mode", ["muted"]), False, False, 0)
-        for d in nearby:
-            self.nearby.pack_start(self.device_row(d), False, False, 0)
-        self.paired.show_all()
-        self.nearby.show_all()
+        keep = set()
+        for box, found, empty in ((self.paired, paired, self.no_paired), (self.nearby, nearby, self.no_nearby)):
+            empty.set_visible(not found)
+            for i, d in enumerate(found):
+                row = self.rows.get(d["path"])
+                if not row:
+                    row = self.rows[d["path"]] = DeviceRow(self.use, self.forget)
+                    row.show_all()
+                if row.get_parent() is not box:
+                    if row.get_parent():
+                        row.get_parent().remove(row)
+                    box.pack_start(row, False, False, 0)
+                box.reorder_child(row, i + 1)
+                row.update(d, *self.status(d))
+                keep.add(d["path"])
+        for path in set(self.rows) - keep:
+            row = self.rows.pop(path)
+            row.get_parent().remove(row)
         return False
 
-    def device_row(self, d):
-        row = Gtk.Box(spacing=4)
-        b = Gtk.Button()
-        b.get_style_context().add_class("device")
-        inner = Gtk.Box(spacing=10)
-        inner.pack_start(label(ICON[BT_ICON.get(d["icon"], "bluetooth")], ["icon"], xalign=0.5, width=2),
-                         False, False, 0)
-        names = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
-        names.pack_start(label(d["name"], ["device-title"] if d["connected"] else [], ellipsize=True),
-                         False, False, 0)
+    def status(self, d):
+        """The second line of a card, and what went wrong (or None)."""
         if d["path"] in self.busy:
-            status = self.busy[d["path"]]
-        elif d["connected"]:
-            status = "Connected" + (f" · {d['battery']}% battery" if d["battery"] is not None else "")
-        else:
-            status = "Not connected" if d["paired"] else "Click to pair"
-        names.pack_start(label(status, ["muted", "small"], ellipsize=True), False, False, 0)
-        inner.pack_start(names, True, True, 0)
-        b.add(inner)
-        b.set_sensitive(d["path"] not in self.busy)
-        b.connect("clicked", lambda _: self.use(d))
-        row.pack_start(b, True, True, 0)
-        if d["paired"]:
-            # Asks once more before forgetting it
-            sure = self.forgetting == d["path"]
-            forget = Gtk.Button(label="Forget?") if sure else icon_button("trash", css=["small"])
-            forget.get_style_context().add_class("small")
-            forget.set_valign(Gtk.Align.CENTER)
-            forget.connect("clicked", lambda _: self.forget(d, sure))
-            row.pack_end(forget, False, False, 0)
-        return row
+            return self.busy[d["path"]], None
+        if d["path"] in self.errors:
+            reason, story = self.errors[d["path"]]
+            return reason[0].upper() + reason[1:], story
+        if d["connected"]:
+            return "Connected" + (f" · {d['battery']}% battery" if d["battery"] is not None else ""), None
+        return ("Not connected" if d["paired"] else "Click to pair"), None
 
     # ------------------------------------------------------------- actions
 
@@ -1643,64 +1742,55 @@ class Bluetooth(Gtk.Box):
 
     def use(self, d):
         path, name = d["path"], d["name"]
-        self.forgetting = None
-        self.say("")
+        self.errors.pop(path, None)
+        for row in self.rows.values():
+            if row.get_visible_child_name() == "forget":
+                row.back()
         if d["connected"]:
             self.busy[path] = "Disconnecting…"
-            bluetooth.disconnect(path, lambda err: self.done(path, name, err, "disconnect from"))
+            bluetooth.disconnect(path, lambda err: self.done(path, err, "disconnect"))
         elif d["paired"]:
             self.busy[path] = "Connecting…"
-            bluetooth.connect(path, lambda err: self.done(path, name, err, "connect to"))
+            bluetooth.connect(path, lambda err: self.done(path, err, "connect"))
         else:
             self.busy[path] = "Pairing…"
-            bluetooth.pair(path, lambda err: self.done(path, name, err, "pair with"))
+            bluetooth.pair(path, lambda err: self.done(path, err, "pair"))
         self.refresh()
 
-    def done(self, path, name, err, verb):
+    def done(self, path, err, verb):
         self.busy.pop(path, None)
-        self.hide_prompt()
+        row = self.rows.get(path)
+        if row and row.get_visible_child_name() == "pair":
+            row.back()
+        self.prompt.hide()
         if err:
-            self.say(f"Couldn't {verb} {name}: {bt_reason(err)}")
+            reason = bt_reason(err)
+            self.errors[path] = reason, f"Couldn't {verb}: {reason}"
         self.refresh()
 
-    def forget(self, d, sure):
-        self.forgetting = None if sure else d["path"]
-        if sure:
-            bluetooth.forget(d["path"])
+    def forget(self, d):
+        self.errors.pop(d["path"], None)
+        bluetooth.forget(d["path"])
+        self.rows[d["path"]].back()
         self.refresh()
-
-    def say(self, text):
-        self.message.set_text(text)
-        self.message.set_visible(bool(text))
 
     # ------------------------------------------------------------- pairing
 
     def ask(self, kind, name, code, reply):
-        self.hide_prompt()
         if not kind:
+            for row in list(self.rows.values()) + [self.prompt]:
+                if row.get_visible_child_name() == "pair":
+                    row.reply = None
+                    row.back()
+            self.prompt.hide()
             return
-        if kind == "show":
-            self.prompt.pack_start(label(f"Type {code} on {name}, then Enter", ["title"]), False, False, 0)
-        else:
-            self.prompt.pack_start(label(f"Pair with {name}?", ["title"], ellipsize=True), False, False, 0)
-            if code:
-                self.prompt.pack_start(label(f"Check that {name} shows {code}", ["muted", "small"]),
-                                       False, False, 0)
-            buttons = Gtk.Box(spacing=8, homogeneous=True)
-            for text, ok in (("Cancel", False), ("Pair", True)):
-                b = Gtk.Button(label=text)
-                if ok:
-                    b.get_style_context().add_class("yes")
-                b.connect("clicked", lambda _, ok=ok: (reply(ok), self.hide_prompt()))
-                buttons.pack_start(b, True, True, 0)
-            self.prompt.pack_start(buttons, False, False, 0)
-        self.prompt.set_no_show_all(False)
-        self.prompt.show_all()
-
-    def hide_prompt(self):
-        for c in self.prompt.get_children():
-            self.prompt.remove(c)
-        self.prompt.hide()
+        row = next((r for r in self.rows.values() if r.device and r.device["name"] == name), None)
+        if not row:
+            row = self.prompt
+            row.update({"path": "", "name": name, "icon": "", "paired": False, "connected": False}, "")
+            row.set_no_show_all(False)
+            row.show_all()
+        row.ask(kind, code, reply)
 
 
 HAS_BLUETOOTH = os.path.isdir("/sys/class/bluetooth") and bool(os.listdir("/sys/class/bluetooth"))
