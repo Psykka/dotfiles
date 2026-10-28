@@ -33,9 +33,22 @@ After touching `panel.py` (or anything it shows), run:
 It opens each popup on the running sway, goes through its steps and fails
 on any size change that is not a deliberate animation. When adding a
 popup, a tab or a new state, add its steps to `steps()` in that script.
+
 `--shots DIR` also saves a screenshot after each step (look at them with
 the Read tool). It needs the user's live sway session (`$SWAYSOCK`); it
 tries a wallpaper but saves nothing.
+
+Notifications are ours too (`waybar/.config/waybar/notifications.py`, in
+place of mako): every card is exactly the same size, whatever it holds.
+After touching it, restart it (`pkill -f '^python3 .*notifications[.]py daemon';
+swaymsg exec '~/.config/waybar/notifications.py daemon'`; a plain
+`pkill -f notifications.py` also matches your own shell) and run:
+
+    dev/notification-sizes.py
+
+It sends every kind of notification (long text, markup, pictures, buttons,
+progress, replaced, more than fit...) and fails if a card or the window
+changes size. New kinds of content get a case there.
 
 For sway behaviour (workspaces, outputs) that shouldn't touch the user's
 session, run a nested headless sway: `WLR_BACKENDS=headless

@@ -17,7 +17,8 @@ the colors as commands, and Waybar reloads only its style.
 
 Fills the templates in ~/dotfiles/themes/templates with the palette in
 ~/dotfiles/themes/<name>.ini, writes them into the stow packages and
-reloads sway, Waybar and mako. GTK apps pick it up when reopened.
+reloads sway and Waybar; the notifications follow on their own. GTK apps
+pick it up when reopened.
 The VSCode theme ("Dotfiles") is packed and installed when it changes;
 VSCode picks it up after "Developer: Reload Window".
 
@@ -148,7 +149,7 @@ def render(values):
 
 
 def reload():
-    for cmd in (["swaymsg", "reload"], ["pkill", "-USR2", "-x", "waybar"], ["makoctl", "reload"]):
+    for cmd in (["swaymsg", "reload"], ["pkill", "-USR2", "-x", "waybar"]):
         subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
@@ -173,7 +174,6 @@ def reload_colors(before):
     # reload_style_on_change: a newer style.css reloads the style (and the
     # colors.css it imports) without making the bar again
     (REPO / "waybar/.config/waybar/style.css").touch()
-    subprocess.run(["makoctl", "reload"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
 def install_vscode():

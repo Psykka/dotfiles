@@ -112,7 +112,9 @@ exec_always gsettings set org.gnome.desktop.interface font-name 'Inter 10' && gs
 
 # Bar, notifications, media tracking and clipboard history
 exec waybar
-exec mako
+# Notifications (and the volume indicator); exec_always brings it back
+# after a crash, and a second one just leaves
+exec_always ~/.config/waybar/notifications.py daemon
 exec playerctld daemon
 # Puts back the microphone gains a headset loses on replug (Sound page)
 exec ~/.config/waybar/audio.py watch

@@ -8,7 +8,7 @@ animation_duration_ms 200
 
 # Soft shadow under the launcher. The bar popups draw their own (it has
 # to slide with them). Not on notifications:
-# mako draws them all on one surface, so the shadow would wrap the stack
+# they draw their own too (notifications.py)
 shadow_color #{{shadow}}
 shadow_blur_radius 20
 shadow_offset 0 4

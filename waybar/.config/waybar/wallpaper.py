@@ -216,7 +216,7 @@ def thumb(source):
 
 def square(source, size=128):
     """A square cut from the middle of a picture, cached: the biggest an icon
-    gets in a notification (mako shows up to 64px)."""
+    gets in a notification (notifications.py shows it in a 48px square)."""
     small = thumb(source)
     if not small:
         return None

@@ -23,6 +23,10 @@ save it or discard it. What you pick is this machine's choice: it goes to
 `~/.local/state/theme-local.ini`, on top of the palette, not into the repo.
 The files `theme` writes from `themes/templates` are not in git either.
 
+Notifications come from our own server (`waybar/.config/waybar/notifications.py`,
+in place of mako): same-size cards with a bar for the time left, which stops
+under the mouse; the calendar lists the last 30.
+
 `Super + /` shows all keybindings.
 
 ## Screenshots

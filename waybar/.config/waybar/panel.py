@@ -419,32 +419,16 @@ class Media(Gtk.Box):
 
 # ------------------------------------------------- calendar + notifications
 
-def notifications():
-    try:
-        data = json.loads(run("makoctl", "history", "-j") or "[]")
-    except json.JSONDecodeError:
-        return []
-    # Older mako wraps the list as {"data": [[{"key": {"data": value}}]]}
-    if isinstance(data, dict):
-        data = data.get("data", [[]])[0]
-        data = [{k: v.get("data") for k, v in n.items()} for n in data]
-    return data
-
-
-# mako keeps no "clear history" command, so clearing remembers the newest
-# id seen and hides everything up to it (reset on reboot, like mako's history)
-CLEARED = os.path.join(RUNTIME, "bar-notifications-cleared")
+NOTIFICATIONS = os.path.join(os.path.dirname(PANEL), "notifications.py")
 
 
 def visible_notifications():
+    """The ones the notification server kept (notifications.py), newest
+    first; it leaves out volume and the like."""
     try:
-        cleared = int(open(CLEARED).read())
-    except (OSError, ValueError):
-        cleared = 0
-    # On-screen indicators (volume, brightness) are not notifications
-    notes = [n for n in notifications() if int(n.get("id") or 0) > cleared
-             and (n.get("app_name") or n.get("app-name")) != "OSD" and n.get("category") != "osd"]
-    return sorted(notes, key=lambda n: -int(n.get("id") or 0))  # newest first
+        return json.loads(run(NOTIFICATIONS, "history") or "[]")
+    except json.JSONDecodeError:
+        return []
 
 
 class Calendar(Gtk.Box):
@@ -522,10 +506,8 @@ class Calendar(Gtk.Box):
         return False
 
     def clear_all(self):
-        ids = [int(n.get("id") or 0) for n in notifications()]
-        with open(CLEARED, "w") as f:
-            f.write(str(max(ids, default=0)))
-        run("makoctl", "dismiss", "--all")
+        run(NOTIFICATIONS, "clear")
+        run(NOTIFICATIONS, "dismiss", "all")
         self.fill([])
 
 
@@ -2732,8 +2714,9 @@ class Wallpapers(Gtk.Box):
 
     def show_examples(self, on):
         """Things that show the colors: a terminal with ufetch and two
-        notifications, one with a picture (mako keeps them until the preview
-        ends, out of the history: mako config)."""
+        notifications, one with a picture (category "preview": the server
+        keeps them, time bar going round, until the preview ends, and out of
+        its history)."""
         self.with_examples = on
         if hasattr(self, "terminal_button"):
             css(self.terminal_button, "on", on=on)
@@ -2746,7 +2729,7 @@ class Wallpapers(Gtk.Box):
                                  for n in notes if n]
         elif not on:
             for note in self.sample_notes:
-                run("makoctl", "dismiss", "-n", note)
+                run(NOTIFICATIONS, "dismiss", note)
             self.sample_notes = []
         if on and not self.terminal and self.previewing:
             # Just the size of what it prints: ufetch and the two rows of

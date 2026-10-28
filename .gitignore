@@ -7,7 +7,6 @@ __pycache__/
 /gtk/.config/gtk-3.0/colors.css
 /gtk/.config/gtk-3.0/settings.ini
 /imv/.config/imv/config
-/mako/.config/mako/colors
 /sway/.config/sway/colors
 /sway/.config/sway/fx.d/effects
 /sway/.config/sway/theme.env
