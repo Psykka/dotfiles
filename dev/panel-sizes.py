@@ -94,7 +94,15 @@ def steps(mode):
             (2000, "end", lambda _: None, False),
         ]
     if mode == "calendar":
-        return [(2000, "end", lambda _: None, False)]
+        return [
+            (0, "next month", lambda c: c.month.move(1), False),
+            # February 2026 fits in four weeks; still six rows
+            (500, "a short month", lambda c: c.month.show(2026, 2), False),
+            (500, "a long name", lambda c: c.month.show(2026, 9), False),
+            (500, "back a year", lambda c: c.month.move(-12), False),
+            (500, "today", lambda c: c.month.back.clicked(), False),
+            (1000, "end", lambda _: None, False),
+        ]
     return None
 
 

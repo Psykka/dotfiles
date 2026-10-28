@@ -6,6 +6,7 @@ Usage: panel.py media|calendar|menu|network|updates|sound|displays|bluetooth|wal
 Running it again with the same mode closes it; another mode replaces it.
 """
 import atexit
+import datetime
 import hashlib
 import json
 import os
@@ -171,22 +172,12 @@ button.tab.on { background: @bg2; color: @hi; }
 entry.search { background: @bg2; color: @fg; border: none; border-radius: 4px; box-shadow: none; padding: 4px 8px; }
 entry.search image { color: @mute; }
 
-calendar {
-    background: transparent;
-    border: none;
-    color: @fg;
-    padding: 2px;
-}
-calendar.header { background: transparent; border: none; }
-calendar.big { font-size: 15px; padding: 4px 6px; }
-calendar.button { color: @mute; background: transparent; border: none; }
-calendar:selected {
-    background: @accent;
-    color: @bg0;
-    border-radius: 3px;
-}
-calendar.highlight { color: @mute; }
-calendar:indeterminate { color: @faint; }
+.today-big { color: @hi; font-size: 18px; font-weight: bold; }
+.month { color: @hi; }
+.weekday { color: @mute; font-size: 11px; }
+.day { border-radius: 6px; }
+.day.other { color: @faint; }
+.day.today { background: @accent; color: @bg0; font-weight: bold; }
 """
 
 
@@ -540,6 +531,78 @@ def visible_notifications():
         return []
 
 
+class Month(Gtk.Box):
+    """Today in large, and a month at a time: always six weeks of cells of
+    one size, so changing months moves nothing; today in the accent color.
+    Scrolling over the days changes the month too."""
+
+    MONTHS = ("January", "February", "March", "April", "May", "June", "July",
+              "August", "September", "October", "November", "December")
+    WEEKDAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
+    DAYS = ("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat")  # Sunday first
+    CELL = 30  # a square: today's mark sits evenly around its number
+
+    def __init__(self):
+        super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        today = self.today = datetime.date.today()
+        self.pack_start(label(self.WEEKDAYS[today.weekday()], ["muted"]), False, False, 0)
+        self.pack_start(label(f"{today.day} {self.MONTHS[today.month - 1]} {today.year}", ["today-big"]),
+                        False, False, 0)
+
+        nav = Gtk.Box(spacing=2, margin_top=10, margin_bottom=4)
+        nav.pack_start(icon_button("left", css=["small"], on_click=lambda: self.move(-1)), False, False, 0)
+        self.title = label(css=["month"], xalign=0.5, width=14)
+        nav.pack_start(self.title, False, False, 0)
+        nav.pack_start(icon_button("right", css=["small"], on_click=lambda: self.move(1)), False, False, 0)
+        self.back = Gtk.Button(label="Today")
+        css(self.back, "small")
+        self.back.connect("clicked", lambda _: self.show(today.year, today.month))
+        nav.pack_end(self.back, False, False, 0)
+        self.pack_start(nav, False, False, 0)
+
+        grid = Gtk.Grid(column_homogeneous=True, row_homogeneous=True, column_spacing=10, row_spacing=2)
+        for col, name in enumerate(self.DAYS):
+            grid.attach(label(name, ["weekday"], xalign=0.5), col, 0, 1, 1)
+        self.cells = []
+        for row in range(6):
+            for col in range(7):
+                cell = label(xalign=0.5)
+                cell.set_size_request(self.CELL, self.CELL)
+                css(cell, "day")
+                grid.attach(cell, col, row + 1, 1, 1)
+                self.cells.append(cell)
+        days = Gtk.EventBox()
+        days.add(grid)
+        days.add_events(Gdk.EventMask.SCROLL_MASK | Gdk.EventMask.SMOOTH_SCROLL_MASK)
+        days.connect("scroll-event", self.scrolled)
+        self.pack_start(days, False, False, 0)
+        self.show(today.year, today.month)
+
+    def show(self, year, month):
+        self.year, self.month = year, month
+        self.title.set_text(f"{self.MONTHS[month - 1]} {year}")
+        self.back.set_sensitive((year, month) != (self.today.year, self.today.month))
+        first = datetime.date(year, month, 1)
+        start = first - datetime.timedelta(days=(first.weekday() + 1) % 7)
+        for i, cell in enumerate(self.cells):
+            day = start + datetime.timedelta(days=i)
+            cell.set_text(str(day.day))
+            css(cell, "other", on=day.month != month)
+            css(cell, "today", on=day == self.today)
+
+    def move(self, step):
+        month = self.year * 12 + self.month - 1 + step
+        self.show(month // 12, month % 12 + 1)
+
+    def scrolled(self, _w, event):
+        ok, _dx, dy = event.get_scroll_deltas()
+        if not ok:
+            dy = {Gdk.ScrollDirection.UP: -1, Gdk.ScrollDirection.DOWN: 1}.get(event.get_scroll_direction()[1], 0)
+        if dy:
+            self.move(1 if dy > 0 else -1)
+        return True
+
+
 class Calendar(Gtk.Box):
     def __init__(self):
         super().__init__(spacing=28)
@@ -569,9 +632,8 @@ class Calendar(Gtk.Box):
         top.pack_end(icon_button("image", "Wallpaper", lambda: spawn(PANEL, "wallpaper"), css=["small"]),
                      False, False, 0)
         self.right.pack_start(top, False, False, 0)
-        cal = Gtk.Calendar()
-        cal.get_style_context().add_class("big")
-        self.right.pack_start(cal, False, False, 0)
+        self.month = Month()
+        self.right.pack_start(self.month, False, False, 0)
         self.pack_start(self.right, False, False, 0)
         self.fill(visible_notifications())
 
