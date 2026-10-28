@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Bar popups: mini media player, calendar + notifications, general menu,
-sound, displays, bluetooth, wallpaper.
+sound, displays, bluetooth, vpn, wallpaper.
 
-Usage: panel.py media|calendar|menu|network|updates|sound|displays|bluetooth|wallpaper
+Usage: panel.py media|calendar|menu|network|updates|sound|displays|bluetooth|vpn|wallpaper
 Running it again with the same mode closes it; another mode replaces it.
 """
 import atexit
@@ -24,6 +24,7 @@ import gi
 import audio
 import bluetooth
 import displays
+import vpn
 import wallpaper
 
 gi.require_version("Gtk", "3.0")
@@ -54,7 +55,7 @@ ICON = {
     "display": "\uf108", "bluetooth": "\uf293",
     "warning": "\uf071", "wrench": "\uf0ad", "headphones": "\uf025",
     "mouse": "\uf8cc", "gamepad": "\uf11b", "phone": "\uf3cd", "laptop": "\uf109",
-    "trash": "\uf1f8", "camera": "\uf030", "move": "\uf0ec", "image": "\uf03e", "terminal": "\uf120",
+    "vpn": "\uf3ed", "trash": "\uf1f8", "camera": "\uf030", "move": "\uf0ec", "image": "\uf03e", "terminal": "\uf120",
 }
 
 CSS = b"""
@@ -96,6 +97,7 @@ button.device-side:hover { color: @red; }
 button.small.danger { background: @red; color: @bg0; }
 button.small.yes { color: @bg0; }
 .device-title { color: @hi; }
+button.device-card.picked { box-shadow: inset 0 0 0 1px @accent; }
 button.tile:hover { background: @line; }
 .tile .icon { font-size: 16px; }
 button.choice { background: @bg2; padding: 6px 0; }
@@ -1992,6 +1994,551 @@ class Bluetooth(Gtk.Box):
         row.ask(kind, code, reply)
 
 
+# --------------------------------------------------------------------- VPN
+
+def vpn_kind(p):
+    if p["kind"] == "openconnect":
+        return dict(vpn.PROTOCOLS).get(p.get("protocol"), "OpenConnect")
+    return {"wireguard": "WireGuard", "openvpn": "OpenVPN"}.get(p["kind"], p["kind"])
+
+
+def size_text(n):
+    for unit in ("B", "KiB", "MiB", "GiB"):
+        if n < 1024 or unit == "GiB":
+            return f"{n:.0f} {unit}" if unit == "B" else f"{n:.1f} {unit}"
+        n /= 1024
+
+
+class VpnRow(Gtk.Stack):
+    """One VPN as a card of a fixed height: a click connects or disconnects
+    it. Forgetting it asks first, inside the card."""
+
+    HEIGHT = 48
+
+    def __init__(self, on_use, on_forget):
+        super().__init__(homogeneous=True, transition_type=Gtk.StackTransitionType.CROSSFADE,
+                         transition_duration=150)
+        self.set_size_request(-1, self.HEIGHT)
+        self.profile = None
+
+        card = css(Gtk.Box(), "device-card")
+        self.main = css(Gtk.Button(), "device-main")
+        inner = Gtk.Box(spacing=10)
+        self.icon = label(ICON["vpn"], ["icon"], xalign=0.5, width=2)
+        inner.pack_start(self.icon, False, False, 0)
+        names = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, valign=Gtk.Align.CENTER)
+        self.name = label(ellipsize=True)
+        self.status = label(css=["muted", "small"], ellipsize=True)
+        names.pack_start(self.name, False, False, 0)
+        names.pack_start(self.status, False, False, 0)
+        inner.pack_start(names, True, True, 0)
+        self.main.add(inner)
+        self.main.connect("clicked", lambda _: on_use(self.profile))
+        card.pack_start(self.main, True, True, 0)
+        self.trash = icon_button("trash", css=["device-side"], on_click=lambda: self.set_visible_child_name("forget"))
+        self.trash.set_tooltip_text("Forget this VPN")
+        card.pack_end(self.trash, False, False, 0)
+        self.add_named(card, "main")
+
+        self.question = label(css=["title"], ellipsize=True)
+        forget, _ = DeviceRow.choice(self, self.question, "Forget", "danger",
+                                     lambda ok: on_forget(self.profile) if ok else self.back())
+        self.add_named(forget, "forget")
+
+    def update(self, p, status, active, error=None):
+        self.profile = p
+        self.name.set_text(p["name"])
+        css(self.name, "device-title", on=active)
+        css(self.icon, "device-title", on=active)
+        self.status.set_text(status)
+        self.status.set_tooltip_text(error)
+        css(self.status, "error", on=bool(error))
+        self.question.set_text(f"Forget {p['name']}?")
+
+    def back(self):
+        self.set_visible_child_name("main")
+
+
+class ChosenApp(Gtk.Box):
+    """One of the apps that always use the VPN, as a card of a fixed height:
+    a click opens it through the VPN; the trash takes it off the list."""
+
+    def __init__(self, app_id, on_open, on_remove):
+        super().__init__()
+        css(self, "device-card")
+        self.set_size_request(-1, VpnRow.HEIGHT)
+        self.app_id = app_id
+        self.main = css(Gtk.Button(), "device-main")
+        inner = Gtk.Box(spacing=10)
+        self.icon = Gtk.Image(pixel_size=20)
+        inner.pack_start(self.icon, False, False, 0)
+        names = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, valign=Gtk.Align.CENTER)
+        self.name = label(ellipsize=True)
+        self.status = label(css=["muted", "small"], ellipsize=True)
+        names.pack_start(self.name, False, False, 0)
+        names.pack_start(self.status, False, False, 0)
+        inner.pack_start(names, True, True, 0)
+        self.main.add(inner)
+        self.main.connect("clicked", lambda _: on_open(app_id))
+        self.pack_start(self.main, True, True, 0)
+        trash = icon_button("trash", css=["device-side"], on_click=lambda: on_remove(app_id))
+        trash.set_tooltip_text("Stop using the VPN for it")
+        self.pack_end(trash, False, False, 0)
+
+    def update(self, status):
+        """status: the VPN's, to tell where the app is."""
+        info = vpn.app_info(self.app_id)
+        name, icon, exe = info or (self.app_id.removesuffix(".desktop"), None, "")
+        self.name.set_text(name)
+        if icon:
+            self.icon.set_from_gicon(icon, Gtk.IconSize.LARGE_TOOLBAR)
+        else:
+            self.icon.set_from_icon_name("application-x-executable", Gtk.IconSize.LARGE_TOOLBAR)
+        on = bool(status) and status["state"] in ("on", "connecting")
+        inside = bool(exe) and any(a["name"] == exe[:15] for a in (status or {}).get("apps", []))
+        out = not inside and bool(exe) and bool(vpn.outside(exe))
+        text = ("Not installed anymore" if not info else
+                "Open, in the VPN" if inside else
+                "Open outside the VPN: close it and open it here" if out else
+                "Click to open it through the VPN" if on else
+                "Opens through the VPN once one is on")
+        self.status.set_text(text)
+        self.status.set_tooltip_text(text)
+        css(self.status, "error", on=out)
+        css(self.name, "device-title", on=inside)
+
+
+class VpnForm(Gtk.Box):
+    """Adding a VPN: a file (WireGuard .conf, OpenVPN .ovpn) or one from
+    GNOME's settings, or an OpenConnect server. Everything has its room up
+    front: the login fields are there, greyed out, when a file needs none."""
+
+    def __init__(self, on_done):
+        super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        self.on_done = on_done
+        self.source = None
+        self.auto_name = ""
+
+        tabs = Gtk.Box(spacing=4, homogeneous=True)
+        self.tabs = {}
+        for key, text in (("file", "From a file"), ("openconnect", "OpenConnect")):
+            b = css(Gtk.Button(label=text), "tab")
+            b.connect("clicked", lambda _, k=key: self.show_tab(k))
+            tabs.pack_start(b, True, True, 0)
+            self.tabs[key] = b
+        self.pack_start(tabs, False, False, 0)
+        self.pages = Gtk.Stack(homogeneous=True, transition_type=Gtk.StackTransitionType.CROSSFADE)
+
+        # A file: the ones found (3 slots), or any path
+        page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        self.found = []
+        for _ in range(3):
+            b = css(Gtk.Button(), "device-main", "device-card")
+            b.add(label(ellipsize=True))
+            b.connect("clicked", lambda btn: self.pick(btn.source))
+            page.pack_start(b, False, False, 0)
+            self.found.append(b)
+        self.path = self.entry("File: ~/Downloads/vpn.conf")
+        self.path.connect("changed", lambda e: self.typed_path(e.get_text()))
+        page.pack_start(self.path, False, False, 0)
+        self.file_name = self.entry("Name")
+        page.pack_start(self.file_name, False, False, 0)
+        self.file_user, self.file_password, login = self.login()
+        page.pack_start(login, False, False, 0)
+        self.pages.add_named(page, "file")
+
+        page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        self.oc_name = self.entry("Name")
+        page.pack_start(self.oc_name, False, False, 0)
+        self.server = self.entry("Server: vpn.example.com")
+        page.pack_start(self.server, False, False, 0)
+        self.protocol = Gtk.ComboBoxText()
+        for key, text in vpn.PROTOCOLS:
+            self.protocol.append(key, text)
+        self.protocol.set_active_id("anyconnect")
+        page.pack_start(self.protocol, False, False, 0)
+        self.oc_user, self.oc_password, login = self.login()
+        page.pack_start(login, False, False, 0)
+        self.pages.add_named(page, "openconnect")
+        self.pack_start(self.pages, True, True, 0)
+
+        bottom = Gtk.Box(spacing=6)
+        self.error = label(css=["error", "small"], ellipsize=True)
+        bottom.pack_start(self.error, True, True, 0)
+        cancel = css(Gtk.Button(label="Cancel"), "small")
+        cancel.connect("clicked", lambda _: self.on_done())
+        add = css(Gtk.Button(label="Add"), "small", "yes")
+        add.connect("clicked", lambda _: self.add())
+        bottom.pack_end(add, False, False, 0)
+        bottom.pack_end(cancel, False, False, 0)
+        self.pack_start(bottom, False, False, 0)
+        self.show_tab("file")
+
+    def entry(self, hint):
+        e = css(Gtk.Entry(placeholder_text=hint), "search")
+        e.connect("activate", lambda _: self.add())
+        return e
+
+    def login(self):
+        row = Gtk.Box(spacing=6, homogeneous=True)
+        user = self.entry("Username")
+        password = self.entry("Password")
+        password.set_visibility(False)
+        row.pack_start(user, True, True, 0)
+        row.pack_start(password, True, True, 0)
+        return user, password, row
+
+    def show_tab(self, key):
+        self.tab = key
+        for k, b in self.tabs.items():
+            css(b, "on", on=k == key)
+        self.pages.set_visible_child_name(key)
+        self.error.set_text("")
+
+    def reset(self):
+        """Fresh, with what there is to import now."""
+        self.source = None
+        self.auto_name = ""
+        for e in (self.path, self.file_name, self.file_user, self.file_password,
+                  self.oc_name, self.server, self.oc_user, self.oc_password):
+            e.set_text("")
+        self.needs_login(False)
+        found = vpn.candidates(len(self.found))
+        for b, item in zip(self.found, found + [None] * len(self.found)):
+            b.source = item[2] if item else None
+            b.get_child().set_text(f"{item[0]}  ·  {item[1]}" if item else "")
+            b.set_sensitive(bool(item))
+            b.set_opacity(1 if item else 0)
+        self.show_tab("file")
+
+    def needs_login(self, on):
+        for e in (self.file_user, self.file_password):
+            e.set_sensitive(on)
+
+    def pick(self, source):
+        if not source:
+            return
+        kind, login = vpn.kind_of(source)
+        self.source = source if kind else None
+        self.needs_login(login)
+        self.error.set_text("" if kind else "Not a WireGuard or OpenVPN config")
+        name = os.path.splitext(os.path.basename(source[1]))[0]
+        # The name follows the pick, unless one was typed
+        if self.file_name.get_text() in ("", self.auto_name):
+            self.file_name.set_text(name)
+        self.auto_name = name
+        for b in self.found:
+            css(b, "picked", on=b.source == source)
+
+    def typed_path(self, text):
+        path = os.path.expanduser(text.strip())
+        if os.path.isfile(path):
+            self.pick(("file", path))
+
+    def add(self):
+        if self.tab == "file":
+            if not self.source:
+                self.error.set_text("Pick a file first")
+                return
+            err = vpn.import_source(self.source, self.file_name.get_text().strip(),
+                                    self.file_user.get_text().strip(), self.file_password.get_text())
+        else:
+            err = vpn.add_openconnect(self.oc_name.get_text().strip(), self.server.get_text().strip(),
+                                      self.protocol.get_active_id(), self.oc_user.get_text().strip(),
+                                      self.oc_password.get_text())
+        if err:
+            self.error.set_text(err[0].upper() + err[1:])
+            self.error.set_tooltip_text(err)
+        else:
+            self.on_done()
+
+
+class Vpn(Gtk.Box):
+    """VPN page of the general menu: whether one is on and its traffic, the
+    switch, whether the whole system or just chosen apps use it, and the
+    VPNs (a click connects one; adding and forgetting happen in place).
+
+    The VPNs sit in a room of a fixed height, which the form to add one
+    takes over: nothing else on the page moves."""
+
+    ROWS = 4
+
+    def __init__(self, on_back):
+        super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        self.set_size_request(320, -1)
+        self.status = None
+        self.rows = {}
+        self.active = False
+        self.ticking = False
+
+        self.pack_start(page_title("VPN", on_back), False, False, 0)
+        top = Gtk.Box(spacing=10)
+        names = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        self.title = label(ellipsize=True)
+        self.detail = label(css=["muted", "small"], ellipsize=True)
+        names.pack_start(self.title, False, False, 0)
+        names.pack_start(self.detail, False, False, 0)
+        top.pack_start(names, True, True, 0)
+        self.switch = Gtk.Switch(valign=Gtk.Align.CENTER)
+        self.switch_handler = self.switch.connect("notify::active", lambda s, _: self.toggle(s.get_active()))
+        top.pack_end(self.switch, False, False, 0)
+        self.pack_start(top, False, False, 0)
+
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        box.pack_start(label("USE IT FOR", ["heading"]), False, False, 0)
+        modes = Gtk.Box(spacing=4, homogeneous=True)
+        self.modes = {}
+        for key, text in (("full", "The whole system"), ("apps", "Chosen apps")):
+            b = css(Gtk.Button(label=text), "tab")
+            b.connect("clicked", lambda _, k=key: self.set_mode(k))
+            modes.pack_start(b, True, True, 0)
+            self.modes[key] = b
+        box.pack_start(modes, False, False, 0)
+        # What the mode means, with a way to open apps in apps mode
+        self.mode_line = Gtk.Stack(homogeneous=True, transition_type=Gtk.StackTransitionType.CROSSFADE)
+        self.mode_line.add_named(label("Every app goes through it", ["muted", "small"]), "full")
+        line = Gtk.Box(spacing=6)
+        self.apps = label(css=["muted", "small"], ellipsize=True)
+        line.pack_start(self.apps, True, True, 0)
+        # Swaps the VPNs for the chosen apps, in the same room
+        self.opener = css(Gtk.Button(label="Choose apps"), "small")
+        self.opener.connect("clicked", lambda _: self.show_apps(self.room.get_visible_child_name() != "apps"))
+        line.pack_end(self.opener, False, False, 0)
+        self.mode_line.add_named(line, "apps")
+        box.pack_start(self.mode_line, False, False, 0)
+        self.pack_start(box, False, False, 0)
+
+        head = Gtk.Box()
+        self.heading = label("MY VPNS", ["heading"])
+        head.pack_start(self.heading, False, False, 0)
+        self.add_button = css(Gtk.Button(label="Add"), "small")
+        self.add_button.connect("clicked", lambda _: self.add_app() if self.room.get_visible_child_name() == "apps"
+                                else self.show_form(True))
+        head.pack_end(self.add_button, False, False, 0)
+        self.pack_start(head, False, False, 0)
+
+        self.list = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        self.empty = label("No VPNs yet: add one", ["muted", "small"])
+        self.list.pack_start(self.empty, False, False, 0)
+        scroll = Gtk.ScrolledWindow()
+        scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        scroll.add(self.list)
+        height = self.ROWS * (VpnRow.HEIGHT + 4)
+        scroll.set_min_content_height(height)
+        scroll.set_max_content_height(height)
+        self.room = Gtk.Stack(homogeneous=True, transition_type=Gtk.StackTransitionType.CROSSFADE)
+        self.room.add_named(scroll, "list")
+        self.form = VpnForm(on_done=lambda: self.show_form(False))
+        self.room.add_named(self.form, "add")
+        self.away = label(css=["muted"], xalign=0.5)
+        self.away.set_line_wrap(True)
+        self.room.add_named(self.away, "away")
+        # The apps that always use the VPN (apps mode)
+        self.app_list = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        self.no_apps = label("None yet. Add the apps that should always use the VPN: they open "
+                             "through it from the launcher too", ["muted", "small"])
+        self.no_apps.set_line_wrap(True)
+        self.app_list.pack_start(self.no_apps, False, False, 0)
+        scroll = Gtk.ScrolledWindow()
+        scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        scroll.add(self.app_list)
+        self.room.add_named(scroll, "apps")
+        self.app_rows = {}
+        self.pack_start(self.room, False, False, 0)
+
+        self.room.show_all()
+        vpn.watch(self.changed)
+        if not self.status:
+            self.changed(vpn.status())
+
+    # ------------------------------------------------------------ on screen
+
+    def activate(self):
+        self.active = True
+        if not self.ticking:
+            self.ticking = True
+            GLib.timeout_add(1000, self.tick)
+
+    def deactivate(self):
+        self.active = False
+
+    def tick(self):
+        """The traffic, every second while the page is on screen."""
+        if not self.active:
+            self.ticking = False
+            return False
+        if self.status and self.status["state"] == "on":
+            s = vpn.status()
+            if s:
+                self.status = s
+                self.top_line()
+        return True
+
+    # --------------------------------------------------------------- state
+
+    def changed(self, s):
+        self.status = s
+        self.top_line()
+        if not s:
+            self.away.set_text("The VPN service isn't running.\nsudo systemctl start vpnd")
+            if self.room.get_visible_child_name() != "add":
+                self.room.set_visible_child_name("away")
+            for b in self.modes.values():
+                b.set_sensitive(False)
+            self.add_button.set_sensitive(False)
+            return
+        for k, b in self.modes.items():
+            b.set_sensitive(True)
+            css(b, "on", on=k == s["mode"])
+        self.add_button.set_sensitive(True)
+        self.mode_line.set_visible_child_name(s["mode"])
+        n = len(vpn.chosen())
+        self.apps.set_text(f"{n} app{'s' if n != 1 else ''} always use{'s' if n == 1 else ''} it" if n else
+                           "Only the apps you choose")
+        if s["mode"] != "apps" and self.room.get_visible_child_name() == "apps":
+            self.show_apps(False)
+        if self.room.get_visible_child_name() == "away":
+            self.room.set_visible_child_name("list")
+        self.fill(s)
+        self.fill_apps()
+
+    def top_line(self):
+        s = self.status
+        with self.switch.handler_block(self.switch_handler):
+            self.switch.set_active(bool(s) and s["state"] in ("on", "connecting", "dropped"))
+        self.switch.set_sensitive(bool(s and s["profiles"]))
+        css(self.detail, "error", on=bool(s) and s["state"] in ("failed", "dropped"))
+        self.detail.set_tooltip_text(s["error"] if s and s["error"] else
+                                     ", ".join(s["routes"]) if s and s["state"] == "on" else None)
+        if not s:
+            title, detail = "VPN", "The service isn't running"
+        elif s["state"] == "on":
+            nets = "the internet" if any(r in ("0.0.0.0/0", "::/0") for r in s["routes"]) else ", ".join(s["routes"])
+            title = f"Connected to {s['profile']}"
+            detail = f"↓ {size_text(s['rx'])}  ↑ {size_text(s['tx'])}  ·  {nets}"
+        elif s["state"] == "connecting":
+            title, detail = f"Connecting to {s['profile']}…", vpn_kind(s) if s["kind"] else ""
+        elif s["state"] == "dropped":
+            title, detail = f"{s['profile']} dropped", "Its traffic is blocked until it's back or off"
+        elif s["state"] == "failed":
+            title, detail = f"Couldn't connect to {s['profile']}", s["error"]
+        else:
+            title = "Not connected"
+            detail = "Pick a VPN below" if s["profiles"] else "Add a VPN below"
+        self.title.set_text(title)
+        css(self.title, "device-title", on=bool(s) and s["state"] == "on")
+        self.detail.set_text(detail)
+
+    def fill(self, s):
+        keep = set()
+        for i, p in enumerate(s["profiles"]):
+            row = self.rows.get(p["name"])
+            if not row:
+                row = self.rows[p["name"]] = VpnRow(self.use, self.forget)
+                row.show_all()
+                self.list.pack_start(row, False, False, 0)
+            self.list.reorder_child(row, i + 1)
+            mine = p["name"] == s["profile"]
+            state = s["state"] if mine else "off"
+            error = s["error"] if mine and state in ("failed", "dropped") else None
+            text = {"on": "Connected", "connecting": "Connecting…", "dropped": "Dropped: traffic blocked",
+                    "failed": f"Failed: {error}"}.get(state, f"{vpn_kind(p)} · {p.get('server', '')}")
+            row.update(p, text, state in ("on", "connecting", "dropped"), error)
+            keep.add(p["name"])
+        for name in set(self.rows) - keep:
+            self.list.remove(self.rows.pop(name))
+        self.empty.set_visible(not s["profiles"])
+
+    # ------------------------------------------------------------- actions
+
+    def toggle(self, on):
+        s = self.status
+        if not s:
+            return
+        if not on:
+            vpn.down()
+        else:
+            names = [p["name"] for p in s["profiles"]]
+            name = s["last"] if s["last"] in names else names[0] if names else None
+            if name:
+                self.report(vpn.up(name))
+
+    def use(self, p):
+        s = self.status
+        for row in self.rows.values():
+            row.back()
+        if s and s["profile"] == p["name"] and s["state"] in ("on", "connecting", "dropped"):
+            vpn.down()
+        else:
+            self.report(vpn.up(p["name"]))
+
+    def forget(self, p):
+        self.report(vpn.remove(p["name"]))
+
+    def set_mode(self, mode):
+        self.report(vpn.set_mode(mode))
+
+    def report(self, err):
+        """Errors the daemon answers at once (most come later, in the status)."""
+        if err:
+            self.title.set_text("Couldn't do it")
+            self.detail.set_text(err)
+            css(self.detail, "error")
+
+    def show_form(self, on):
+        if on:
+            self.form.reset()
+        self.room.set_visible_child_name("add" if on else "list" if self.status else "away")
+        self.add_button.set_sensitive(not on and bool(self.status))
+        self.opener.set_sensitive(not on)
+
+    def fill_apps(self):
+        ids = vpn.chosen()
+        for i, app_id in enumerate(ids):
+            row = self.app_rows.get(app_id)
+            if not row:
+                row = self.app_rows[app_id] = ChosenApp(app_id, self.open_chosen, self.unchoose)
+                row.show_all()
+                self.app_list.pack_start(row, False, False, 0)
+            self.app_list.reorder_child(row, i + 1)
+            row.update(self.status)
+        for app_id in set(self.app_rows) - set(ids):
+            self.app_list.remove(self.app_rows.pop(app_id))
+        self.no_apps.set_visible(not ids)
+
+    def show_apps(self, on):
+        self.heading.set_text("APPS THAT USE IT" if on else "MY VPNS")
+        self.opener.set_label("Done" if on else "Choose apps")
+        if on:
+            self.fill_apps()
+        self.room.set_visible_child_name("apps" if on else "list" if self.status else "away")
+
+    def open_chosen(self, app_id):
+        s = self.status
+        if not s or s["state"] not in ("on", "connecting"):
+            self.report("Turn a VPN on first: it only opens through one")
+            return
+        vpn.open_chosen(app_id)
+        GLib.timeout_add(1500, lambda: self.fill_apps() or False)
+
+    def unchoose(self, app_id):
+        vpn.unchoose(app_id)
+        self.changed(self.status)
+
+    def add_app(self):
+        """The launcher on this panel's display (not the focused one), once
+        the panel has closed: what is picked there always uses the VPN."""
+        top = self.get_toplevel()
+        output = None
+        window = top.get_window()
+        if window:
+            area = Gdk.Display.get_default().get_monitor_at_window(window).get_geometry()
+            output = next((o["name"] for o in displays.outputs()
+                           if (o["rect"]["x"], o["rect"]["y"]) == (area.x, area.y)), None)
+        vpn.add_app(output, os.getpid())
+        top.close() if hasattr(top, "revealer") else Gtk.main_quit()
+
+
 HAS_BLUETOOTH = os.path.isdir("/sys/class/bluetooth") and bool(os.listdir("/sys/class/bluetooth"))
 
 
@@ -2006,7 +2553,7 @@ class Menu(Gtk.Box):
 
     def __init__(self, page="main"):
         super().__init__()
-        # The main page, and sub pages (Sound, Displays, Bluetooth) that slide in from the right
+        # The main page, and sub pages (Sound, Displays, Bluetooth, VPN) that slide in from the right
         self.pages = Gtk.Stack(vhomogeneous=False, hhomogeneous=False, transition_duration=200)
         self.add(self.pages)
         main = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=16)
@@ -2020,6 +2567,10 @@ class Menu(Gtk.Box):
         if HAS_BLUETOOTH:
             self.bluetooth = Bluetooth(on_back=lambda: self.show_page("main"))
             self.pages.add_named(self.bluetooth, "bluetooth")
+        self.vpn = None
+        if vpn.available():
+            self.vpn = Vpn(on_back=lambda: self.show_page("main"))
+            self.pages.add_named(self.vpn, "vpn")
 
         main.pack_start(NetworkRow(), False, False, 0)
 
@@ -2042,6 +2593,10 @@ class Menu(Gtk.Box):
             bt = icon_button("bluetooth", "Bluetooth", lambda: self.show_page("bluetooth"))
             bt.get_child().pack_end(label(ICON["right"], ["icon", "muted"], xalign=1.0), True, True, 0)
             buttons.pack_start(bt, False, False, 0)
+        if self.vpn:
+            v = icon_button("vpn", "VPN", lambda: self.show_page("vpn"))
+            v.get_child().pack_end(label(ICON["right"], ["icon", "muted"], xalign=1.0), True, True, 0)
+            buttons.pack_start(v, False, False, 0)
         buttons.pack_start(label("SYSTEM", ["heading"]), False, False, 4)
         buttons.pack_start(icon_button("keyboard", "Keybindings", lambda: self.run_and_quit(
             [os.path.expanduser("~/.config/sway/keys.sh")])), False, False, 0)
@@ -2086,6 +2641,8 @@ class Menu(Gtk.Box):
             self.displays.build()  # changed elsewhere since the menu opened
         if self.bluetooth:
             (self.bluetooth.activate if page == "bluetooth" else self.bluetooth.deactivate)()
+        if self.vpn:
+            (self.vpn.activate if page == "vpn" else self.vpn.deactivate)()
 
     def toggle_power(self):
         opening = not self.revealer.get_reveal_child()
@@ -3302,7 +3859,7 @@ class Panel(Gtk.Window):
         GtkLayerShell.set_keyboard_mode(self, GtkLayerShell.KeyboardMode.EXCLUSIVE)
         GtkLayerShell.set_anchor(self, GtkLayerShell.Edge.TOP, True)
         GtkLayerShell.set_margin(self, GtkLayerShell.Edge.TOP, 6)
-        if mode in ("menu", "network", "updates", "sound", "displays", "bluetooth"):
+        if mode in ("menu", "network", "updates", "sound", "displays", "bluetooth", "vpn"):
             GtkLayerShell.set_anchor(self, GtkLayerShell.Edge.RIGHT, True)
             GtkLayerShell.set_margin(self, GtkLayerShell.Edge.RIGHT, 6 - SHADOW)
 
@@ -3311,7 +3868,7 @@ class Panel(Gtk.Window):
         self.mode = mode
         self.frame = frame = Gtk.Box()
         frame.get_style_context().add_class("panel")
-        self.content = (Menu(mode) if mode in ("sound", "displays", "bluetooth") else
+        self.content = (Menu(mode) if mode in ("sound", "displays", "bluetooth", "vpn") else
                         {"media": Media, "calendar": Calendar, "menu": Menu, "network": Network, "updates": Updates,
                          "wallpaper": Wallpapers}[mode]())
         frame.add(self.content)
@@ -3402,7 +3959,7 @@ def restyle():
     STYLE.load_from_data(colors + CSS)
 
 
-MODES = ("media", "calendar", "menu", "network", "updates", "sound", "displays", "bluetooth", "wallpaper")
+MODES = ("media", "calendar", "menu", "network", "updates", "sound", "displays", "bluetooth", "vpn", "wallpaper")
 
 
 def main():

@@ -1,0 +1,5 @@
+# Both ends of the OpenConnect test (run.sh): ocserv for the server, and
+# openconnect + nftables for the client running vpn/'s daemon
+FROM registry.fedoraproject.org/fedora:44
+RUN dnf install -y --setopt=install_weak_deps=False ocserv openconnect iproute nftables \
+        openssl python3 procps-ng && dnf clean all

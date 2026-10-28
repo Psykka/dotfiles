@@ -60,6 +60,13 @@ It sends every kind of notification (long text, markup, pictures, buttons,
 progress, replaced, more than fit...) and fails if a card or the window
 changes size. New kinds of content get a case there.
 
+The VPN daemon is Go (`vpn/`, installed by `vpn/install-vpn.sh` as
+`/usr/local/bin/vpn` + `vpnd.service`); the panel talks to it through
+`waybar/.config/waybar/vpn.py`, which `dev/fake_vpn.py` stands in for on
+the `vpn` page. After touching `vpn/`, run `dev/vpn-test.py` (WireGuard,
+OpenVPN, split modes, DNS, kill switch; no root, in namespaces) and, for
+OpenConnect, `dev/vpn-servers/run.sh` (ocserv in podman).
+
 For sway behaviour (workspaces, outputs) that shouldn't touch the user's
 session, run a nested headless sway: `WLR_BACKENDS=headless
 WLR_RENDERER=pixman sway` with a short `XDG_RUNTIME_DIR` (long paths break

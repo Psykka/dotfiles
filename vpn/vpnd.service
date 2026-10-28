@@ -1,0 +1,19 @@
+# The VPN daemon (vpn/ in the dotfiles). Installed by vpn/install-vpn.sh.
+[Unit]
+Description=VPN daemon: WireGuard, OpenVPN and OpenConnect, for the whole system or chosen apps
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/local/bin/vpn daemon
+# Its socket (/run/vpn) and the imported VPNs (/var/lib/vpn, root only)
+RuntimeDirectory=vpn
+StateDirectory=vpn
+StateDirectoryMode=0700
+# Only the daemon gets the stop signal: it takes the VPN down and removes
+# its rules itself, openvpn/openconnect included
+KillMode=mixed
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

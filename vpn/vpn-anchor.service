@@ -1,0 +1,13 @@
+# Keeps vpn.slice (systemd --user) alive. The rules of the VPN's apps mode
+# point at that slice; one made anew would not match them, so it must not
+# come and go. Installed for every user by vpn/install-vpn.sh.
+[Unit]
+Description=Keeps vpn.slice alive for the VPN's apps mode
+
+[Service]
+Slice=vpn.slice
+ExecStart=/usr/bin/sleep infinity
+Restart=always
+
+[Install]
+WantedBy=default.target

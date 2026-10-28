@@ -45,6 +45,18 @@ from the start.
     main display, resolution and scale; kept for the next login.
   - **Bluetooth** (when there is an adapter): connect, pair checking the
     code, forget.
+  - **VPN**: connect and disconnect each VPN, its traffic, and whether the
+    whole system or just chosen apps go through it. Adds WireGuard and
+    OpenVPN files (or the ones GNOME's settings have) and OpenConnect
+    servers (AnyConnect, GlobalProtect, Fortinet...).
+
+**VPN** (`vpn/`, a small Go daemon): turned on from the menu, it shows a
+shield on the bar while it is on (red if the connection dropped); right
+click turns it off. A VPN out to the internet has a kill switch (if it drops, what went
+through it is blocked, not leaked) and its own DNS; one into an office
+network only carries that network. In apps mode only apps opened from the
+VPN page (or `vpn run app`) use it. `vpn` in a terminal does the same as
+the page.
 
 **Notifications** come from our own server (`notifications.py`, in place of
 mako): cards all the same size, a bar for the time left that stops under
@@ -117,9 +129,13 @@ The bar popups live in `waybar/.config/waybar/panel.py`. After changing
 them, `dev/panel-sizes.py` opens each one on the running sway, goes through
 its states and fails if anything changes size;
 `dev/notification-sizes.py` does the same for the notifications. A
-pretend media player, sound server and Bluetooth (`dev/fake-player.py`,
-`dev/fake_audio.py`, `dev/fake_bluetooth.py`) let them be tried on a
-machine without any of those.
+pretend media player, sound server, Bluetooth and VPN daemon
+(`dev/fake-player.py`, `dev/fake_audio.py`, `dev/fake_bluetooth.py`,
+`dev/fake_vpn.py`) let them be tried on a machine without any of those.
+`dev/vpn-test.py` tries the VPN daemon against real WireGuard and OpenVPN
+servers in network namespaces of its own (no root, nothing touches the
+machine's network), and `dev/vpn-servers/run.sh` against a real OpenConnect
+server (ocserv) in podman.
 
 ## Credits
 

@@ -13,8 +13,9 @@ Usage: dev/panel-sizes.py [MODE ...]        all of them by default
 
 The popups really open, on the focused display. The media one plays the
 pretend player (dev/fake-player.py) and leaves any real one alone; the
-Bluetooth one has pretend devices (dev/fake_bluetooth.py) and the sound
-one a pretend sound server (dev/fake_audio.py). The
+Bluetooth one has pretend devices (dev/fake_bluetooth.py), the sound
+one a pretend sound server (dev/fake_audio.py) and the VPN one a pretend
+daemon (dev/fake_vpn.py). The
 wallpaper one tries a wallpaper already downloaded on the desktop, then
 discards it: nothing is saved. Not a stow package: nothing here is linked
 into ~.
@@ -114,6 +115,40 @@ def steps(mode):
             (800, "turn on", lambda m: m.bluetooth.switch.set_active(True), False),
             (1000, "end", lambda _: None, False),
         ]
+    if mode == "vpn":
+        # With the pretend VPN daemon (fake_vpn.py), set up in run()
+        import fake_vpn as fake
+
+        def vpn(name):
+            return next(p for p in fake.PROFILES if p["name"] == name)
+        return [
+            (0, "connect", lambda m: m.vpn.use(vpn("support")), False),
+            (2500, "only chosen apps", lambda m: m.vpn.set_mode("apps"), False),
+            (500, "the chosen apps", lambda m: m.vpn.show_apps(True), False),
+            (500, "open one", lambda m: m.vpn.open_chosen("firefox.desktop"), False),
+            (1800, "take one off", lambda m: m.vpn.unchoose("org.qbittorrent.qBittorrent.desktop"), False),
+            (500, "none left", lambda m: [m.vpn.unchoose(i) for i in fake.chosen()], False),
+            (500, "one added", lambda _: fake.choose("org.qbittorrent.qBittorrent.desktop"), False),
+            (500, "done", lambda m: m.vpn.show_apps(False), False),
+            (500, "a long name", lambda m: m.vpn.use(vpn("Proton BR-FREE#12 with a long name")), False),
+            (1500, "the whole system", lambda m: m.vpn.set_mode("full"), False),
+            (500, "one that fails", lambda m: m.vpn.use(vpn("Office")), False),
+            (1500, "switch on again", lambda m: m.vpn.switch.set_active(True), False),
+            (1500, "switch off", lambda m: m.vpn.switch.set_active(False), False),
+            (500, "ask to forget", lambda m: m.vpn.rows["Work"].trash.clicked(), False),
+            (500, "don't forget", lambda m: m.vpn.rows["Work"].back(), False),
+            (500, "add one", lambda m: m.vpn.show_form(True), False),
+            (800, "pick a file", lambda m: m.vpn.form.found[0].clicked(), False),
+            (500, "one with a login", lambda m: m.vpn.form.found[1].clicked(), False),
+            (500, "OpenConnect", lambda m: m.vpn.form.show_tab("openconnect"), False),
+            (500, "add without a server", lambda m: m.vpn.form.add(), False),
+            (500, "a very long error", lambda m: m.vpn.form.error.set_text("x " * 200), False),
+            (500, "cancel", lambda m: m.vpn.show_form(False), False),
+            (800, "forget", lambda m: m.vpn.forget(vpn("Work")), False),
+            (800, "service away", lambda m: m.vpn.changed(None), False),
+            (800, "and back", lambda m: m.vpn.changed(fake.snapshot()), False),
+            (1000, "end", lambda _: None, False),
+        ]
     if mode == "sound":
         # With the pretend sound server (fake_audio.py), set up in run()
         import fake_audio as fake
@@ -169,7 +204,7 @@ def stop_fake_player():
         fake.pop().terminate()
 
 
-MODES = ("wallpaper", "menu", "sound", "bluetooth", "calendar", "media")
+MODES = ("wallpaper", "menu", "sound", "bluetooth", "vpn", "calendar", "media")
 
 
 def run(mode, shots):
@@ -189,6 +224,10 @@ def run(mode, shots):
         sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
         import fake_audio
         panel.audio = fake_audio
+    if mode in ("vpn", "menu"):
+        sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+        import fake_vpn
+        panel.vpn = fake_vpn
     plan = steps(mode)
     if plan is None:
         print(f"{mode}: skipped (nothing to try it with)")

@@ -13,4 +13,5 @@ if [ -f "$cache" ]; then
     mv "$cache.tmp" "$cache"
 fi
 
-exec fuzzel "$@"
+# The apps chosen to use the VPN open through it (vpn-launch.sh)
+exec fuzzel --launch-prefix="$HOME/.config/sway/vpn-launch.sh" "$@"

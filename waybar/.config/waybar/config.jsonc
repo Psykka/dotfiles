@@ -82,7 +82,7 @@
     // right island
     "group/right": {
         "orientation": "horizontal",
-        "modules": ["cpu", "memory", "battery", "network", "tray", "custom/menu"]
+        "modules": ["cpu", "memory", "battery", "custom/vpn", "network", "tray", "custom/menu"]
     },
 
     "cpu": {
@@ -95,6 +95,18 @@
         "format": "<span font_size='10pt' rise='-1pt'>\uf538</span> {used:0.1f}G",
         "interval": 5,
         "tooltip": false
+    },
+
+    // VPN (vpn/, vpnd.service): a shield, only while one is on (turned on
+    // from the menu's VPN page); pulsing while it connects, red when it
+    // dropped. Left click: VPN page, right click: off
+    "custom/vpn": {
+        "exec": "~/.config/waybar/vpn.py bar",
+        "return-type": "json",
+        "format": "<span font_size='10pt' rise='-1pt'>{}</span>",
+        "tooltip": true,
+        "on-click": "~/.config/waybar/panel.py vpn",
+        "on-click-right": "vpn toggle"
     },
 
     // Cable or Wi-Fi at a glance; click: network popup (Wi-Fi list open)

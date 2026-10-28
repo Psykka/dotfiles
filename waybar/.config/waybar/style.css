@@ -95,6 +95,17 @@ window#waybar {
 #network.disconnected { color: @mute; }
 /* CPU and memory are just information: no hover */
 #network:hover { color: @hi; }
+/* VPN shield, only while one is on: bright, pulsing while it connects,
+   red when it dropped (its traffic is blocked). Hidden, waybar keeps the
+   module's box: the padding goes only on the visible states, or it would
+   leave a gap */
+#custom-vpn { padding: 0; color: @hi; transition: color 150ms ease; }
+#custom-vpn.on, #custom-vpn.connecting, #custom-vpn.dropped { padding: 0 6px; }
+#custom-vpn.dropped { color: @red; }
+#custom-vpn.connecting { color: @fg; animation: vpn-connecting 900ms ease-in-out infinite alternate; }
+@keyframes vpn-connecting {
+    to { color: @mute; }
+}
 #battery { padding: 0 8px 0 4px; color: @fg; }
 #battery.charging { color: @hi; }
 #battery.warning:not(.charging) { color: @hi; font-weight: bold; }
