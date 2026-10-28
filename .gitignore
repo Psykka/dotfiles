@@ -1,2 +1,17 @@
 __pycache__/
 *.pyc
+
+# Written by `theme` from themes/templates (the palette is the source)
+/alacritty/.config/alacritty/colors.toml
+/fuzzel/.config/fuzzel/colors.ini
+/gtk/.config/gtk-3.0/colors.css
+/gtk/.config/gtk-3.0/settings.ini
+/imv/.config/imv/config
+/mako/.config/mako/colors
+/sway/.config/sway/colors
+/sway/.config/sway/fx.d/effects
+/sway/.config/sway/theme.env
+/vscode-theme/themes/dotfiles-color-theme.json
+/waybar/.config/waybar/colors.css
+/waybar/.config/waybar/logo
+/waybar/.config/waybar/notch.svg

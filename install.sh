@@ -27,15 +27,15 @@ wl-clipboard cliphist mate-polkit stow wireplumber wdisplays kanshi
 papirus-icon-theme starship eza bat nnn imv alsa-utils gnome-keyring"
 
 case $distro in
-    fedora) packages="$common mako sway-systemd libnotify pulseaudio-utils NetworkManager
+    fedora) packages="$common ImageMagick mako sway-systemd libnotify pulseaudio-utils NetworkManager
         greetd tuigreet gnome-keyring-pam
         gtk-layer-shell python3-gobject python3-i3ipc jetbrains-mono-fonts-all rsms-inter-fonts google-noto-sans-cjk-vf-fonts
         google-noto-color-emoji-fonts fontawesome-6-free-fonts
         fontawesome-6-brands-fonts adwaita-mono-fonts papirus-icon-theme-dark" ;;
-    arch) packages="$common mako libnotify libpulse networkmanager greetd greetd-tuigreet
+    arch) packages="$common imagemagick mako libnotify libpulse networkmanager greetd greetd-tuigreet
         gtk-layer-shell python-gobject python-i3ipc
         ttf-jetbrains-mono inter-font noto-fonts-cjk noto-fonts-emoji otf-font-awesome" ;;
-    debian) packages="$common sway mako-notifier libnotify-bin pulseaudio-utils network-manager
+    debian) packages="$common imagemagick sway mako-notifier libnotify-bin pulseaudio-utils network-manager
         greetd tuigreet libpam-gnome-keyring
         gir1.2-gtklayershell-0.1 gir1.2-gtk-3.0 python3-gi python3-i3ipc fonts-jetbrains-mono
         fonts-inter fonts-noto-cjk fonts-noto-color-emoji fonts-font-awesome" ;;
@@ -92,6 +92,11 @@ done
 say "Package manager settings"
 SUDO=sudo system/install-system.sh
 
+# The theme writes its files (colors, logo...) into the packages, which are
+# not in git: they have to be there before stow links the packages
+say "Applying the color theme"
+"$REPO/bin/.local/bin/theme" "$(cat themes/current 2>/dev/null || echo dark)"
+
 say "Linking configs"
 backup="$HOME/.dotfiles-backup/$(date +%Y-%m-%d_%H-%M-%S)"
 for pkg in $STOW_PACKAGES; do
@@ -141,9 +146,6 @@ fi
 if command -v code >/dev/null; then
     code --install-extension pkief.material-icon-theme >/dev/null
 fi
-
-say "Applying the color theme"
-"$HOME/.local/bin/theme" "$(cat themes/current 2>/dev/null || echo dark)"
 
 say "Done"
 if [ -d "$backup" ]; then echo "Old files saved in $backup"; fi

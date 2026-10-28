@@ -141,3 +141,6 @@ for_window [app_id="polkit-mate-authentication-agent-1"] floating enable
 for_window [app_id="xdg-desktop-portal-gtk"] floating enable
 for_window [app_id="org.pulseaudio.pavucontrol"] floating enable
 for_window [title="^Picture-in-Picture$"] floating enable, sticky enable
+# Terminal with ufetch in the wallpaper preview (panel.py): invisible until
+# the panel puts it in a corner
+for_window [app_id="wallpaper-preview"] floating enable, opacity 0

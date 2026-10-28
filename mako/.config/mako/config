@@ -21,3 +21,9 @@ margin=0,0,72,0
 default-timeout=1500
 history=0
 format=<b>%s</b>
+
+# Sample notification of the wallpaper preview (panel.py): stays until the
+# preview ends, never kept in the history
+[category=preview]
+default-timeout=0
+history=0

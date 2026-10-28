@@ -16,6 +16,13 @@ and shadows.
 
 Colors live in `themes/dark.ini`; after editing it, run `theme` to apply.
 
+Wallpaper: click the clock (then "Wallpaper"), or "Wallpaper" under System in
+the launcher. Search Wallhaven or pick one already downloaded, take the colors
+from it (or keep the theme's), adjust the picture, try it on the desktop, then
+save it or discard it. What you pick is this machine's choice: it goes to
+`~/.local/state/theme-local.ini`, on top of the palette, not into the repo.
+The files `theme` writes from `themes/templates` are not in git either.
+
 `Super + /` shows all keybindings.
 
 ## Screenshots

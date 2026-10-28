@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Bar popups: mini media player, calendar + notifications, general menu,
-sound, displays, bluetooth.
+sound, displays, bluetooth, wallpaper.
 
-Usage: panel.py media|calendar|menu|network|updates|sound|displays|bluetooth
+Usage: panel.py media|calendar|menu|network|updates|sound|displays|bluetooth|wallpaper
 Running it again with the same mode closes it; another mode replaces it.
 """
+import atexit
 import hashlib
 import json
 import os
@@ -22,6 +23,7 @@ import gi
 import audio
 import bluetooth
 import displays
+import wallpaper
 
 gi.require_version("Gtk", "3.0")
 gi.require_version("Gdk", "3.0")
@@ -37,6 +39,7 @@ RUNTIME = os.environ.get("XDG_RUNTIME_DIR", "/tmp")
 WORKSPACES_WIDTH = 70
 CLOCK_WIDTH = 150
 PIDFILE = os.path.join(RUNTIME, "bar-panel.pid")
+PANEL = os.path.abspath(__file__)
 
 # Font Awesome glyphs
 ICON = {
@@ -50,13 +53,13 @@ ICON = {
     "display": "\uf108", "bluetooth": "\uf293",
     "warning": "\uf071", "wrench": "\uf0ad", "headphones": "\uf025",
     "mouse": "\uf8cc", "gamepad": "\uf11b", "phone": "\uf3cd", "laptop": "\uf109",
-    "trash": "\uf1f8",
+    "trash": "\uf1f8", "image": "\uf03e", "terminal": "\uf120",
 }
 
 CSS = b"""
 window { background: transparent; }
 .panel {
-    box-shadow: 0 8px 22px rgba(0, 0, 0, 0.55), 0 1px 4px rgba(0, 0, 0, 0.35);
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.32);
     background: @surface;
     border-radius: 6px;
     padding: 16px;
@@ -139,6 +142,26 @@ scale slider {
 
 
 .notif { background: @bg2; border-radius: 4px; padding: 8px 10px; }
+
+button.thumb { padding: 0; background: @bg2; border: 2px solid transparent; border-radius: 4px; }
+button.thumb:hover { background: @bg2; border-color: @faint; }
+button.thumb.picked { border-color: @accent; }
+.slot { background: @bg2; border-radius: 4px; }
+.loading { opacity: 0.4; transition: opacity 150ms; }
+.panel.slim { padding: 8px 8px 8px 16px; }
+.notice { background: @bg0; border-radius: 6px; padding: 10px 14px; }
+.mark { background: @accent; color: @bg0; border-radius: 4px; font-size: 9px; padding: 2px 4px; margin: 4px; }
+button.chip { padding: 2px; border: 1px solid transparent; border-radius: 4px; }
+button.chip:hover { background: transparent; border-color: @faint; }
+button.chip.yes { background: transparent; border-color: @accent; }
+button.filter { padding: 2px 8px; font-size: 11px; background: @bg2; }
+button.filter:hover { background: @line; }
+button.filter.yes { background: @accent; color: @bg0; }
+button.tab { padding: 2px 10px; font-size: 11px; color: @mute; }
+button.tab.on { background: @bg2; color: @hi; }
+.tuning:disabled { opacity: 0.5; }
+entry.search { background: @bg2; color: @fg; border: none; border-radius: 4px; box-shadow: none; padding: 4px 8px; }
+entry.search image { color: @mute; }
 
 calendar {
     background: transparent;
@@ -448,7 +471,11 @@ class Calendar(Gtk.Box):
         self.pack_start(left, True, True, 0)
 
         self.right = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
-        self.right.pack_start(label("CALENDAR", ["heading"]), False, False, 6)
+        top = Gtk.Box()
+        top.pack_start(label("CALENDAR", ["heading"]), True, True, 0)
+        top.pack_end(icon_button("image", "Wallpaper", lambda: spawn(PANEL, "wallpaper"), css=["small"]),
+                     False, False, 0)
+        self.right.pack_start(top, False, False, 0)
         cal = Gtk.Calendar()
         cal.get_style_context().add_class("big")
         self.right.pack_start(cal, False, False, 0)
@@ -1567,6 +1594,8 @@ class Menu(Gtk.Box):
         screens = icon_button("display", "Displays", lambda: self.show_page("displays"))
         screens.get_child().pack_end(label(ICON["right"], ["icon", "muted"], xalign=1.0), True, True, 0)
         buttons.pack_start(screens, False, False, 0)
+        buttons.pack_start(icon_button("image", "Wallpaper", lambda: self.run_and_quit([PANEL, "wallpaper"])),
+                           False, False, 0)
         if self.bluetooth:
             bt = icon_button("bluetooth", "Bluetooth", lambda: self.show_page("bluetooth"))
             bt.get_child().pack_end(label(ICON["right"], ["icon", "muted"], xalign=1.0), True, True, 0)
@@ -1644,6 +1673,1146 @@ class Menu(Gtk.Box):
         top.close() if hasattr(top, "revealer") else Gtk.main_quit()
 
 
+# --------------------------------------------------------------- wallpaper
+
+def quote(name):
+    return '"' + name.replace('"', '\\"') + '"'
+
+
+THUMB_W, THUMB_H = 144, 81
+CELL_W, CELL_H = THUMB_W + 4, THUMB_H + 4  # with the border
+COLUMNS = 4
+LOCAL_PAGE = 12  # downloaded wallpapers per page
+
+
+def cover(pix, w, h):
+    """The picture scaled to fill w×h, cut around the middle."""
+    k = max(w / pix.get_width(), h / pix.get_height())
+    sw, sh = max(w, round(pix.get_width() * k)), max(h, round(pix.get_height() * k))
+    scaled = pix.scale_simple(sw, sh, GdkPixbuf.InterpType.BILINEAR)
+    return scaled.new_subpixbuf((sw - w) // 2, (sh - h) // 2, w, h)
+
+
+def rounded(cr, x, y, w, h, r):
+    cr.new_sub_path()
+    cr.arc(x + w - r, y + r, r, -1.5708, 0)
+    cr.arc(x + w - r, y + h - r, r, 0, 1.5708)
+    cr.arc(x + r, y + h - r, r, 1.5708, 3.1416)
+    cr.arc(x + r, y + r, r, 3.1416, 4.7124)
+    cr.close_path()
+
+
+def css(widget, *classes, on=True):
+    ctx = widget.get_style_context()
+    for c in classes:
+        (ctx.add_class if on else ctx.remove_class)(c)
+    return widget
+
+
+class Chip(Gtk.DrawingArea):
+    """A rounded patch of colors side by side."""
+
+    def __init__(self, colors, w, h):
+        super().__init__()
+        self.colors = colors
+        self.set_size_request(w, h)
+        self.connect("draw", self.draw)
+
+    def set_colors(self, colors):
+        self.colors = colors
+        self.queue_draw()
+
+    def draw(self, _w, cr):
+        w, h = self.get_allocated_width(), self.get_allocated_height()
+        rounded(cr, 0, 0, w, h, min(4, h / 2))
+        cr.clip()
+        step = w / max(1, len(self.colors))
+        for i, c in enumerate(self.colors):
+            cr.set_source_rgb(*wallpaper.rgb(c))
+            cr.rectangle(i * step, 0, step + 1, h)
+            cr.fill()
+        return False
+
+
+class Spinner(Gtk.DrawingArea):
+    """A thin arc going round in the palette's colors (GTK's own spinner is
+    the icon theme's); draws nothing when stopped, but keeps its room."""
+
+    SIZE = 12
+
+    def __init__(self):
+        super().__init__()
+        self.set_size_request(self.SIZE, self.SIZE)
+        self.set_valign(Gtk.Align.CENTER)
+        self.angle, self.timer = 0.0, None
+        self.connect("draw", self.draw)
+        self.connect("destroy", lambda _: self.stop())
+
+    def start(self):
+        if not self.timer:
+            self.timer = GLib.timeout_add(16, self.turn)
+
+    def stop(self):
+        if self.timer:
+            GLib.source_remove(self.timer)
+            self.timer = None
+            self.queue_draw()
+
+    def turn(self):
+        self.angle = (self.angle + 0.15) % 6.2832
+        self.queue_draw()
+        return True
+
+    def draw(self, _w, cr):
+        if not self.timer:
+            return False
+        c = self.SIZE / 2
+        ctx = self.get_style_context()
+        cr.set_line_width(1.5)
+        for name, start, end in (("line", 0, 6.2832), ("accent", self.angle, self.angle + 1.8)):
+            found, color = ctx.lookup_color(name)
+            cr.set_source_rgb(*((color.red, color.green, color.blue) if found else (0.5, 0.5, 0.5)))
+            cr.arc(c, c, c - 1, start, end)
+            cr.stroke()
+        return False
+
+
+class Thumb(Gtk.Button):
+    """A wallpaper in a grid; the picture loads in the background, and a
+    check marks the one in use."""
+
+    def __init__(self, source, on_click, current=False):
+        super().__init__()
+        css(self, "thumb")
+        self.alive = True
+        overlay = Gtk.Overlay()
+        self.image = Gtk.Image()
+        self.image.set_size_request(THUMB_W, THUMB_H)
+        overlay.add(self.image)
+        if current:
+            mark = label(ICON["check"], ["icon", "mark"], xalign=0.5)
+            mark.set_halign(Gtk.Align.END)
+            mark.set_valign(Gtk.Align.END)
+            overlay.add_overlay(mark)
+        self.add(overlay)
+        self.connect("clicked", lambda _: on_click())
+        self.connect("destroy", lambda _: setattr(self, "alive", False))
+        threading.Thread(target=self.load, args=(source,), daemon=True).start()
+
+    def load(self, source):
+        path = wallpaper.thumb(source)
+        try:
+            pix = cover(GdkPixbuf.Pixbuf.new_from_file(str(path)), THUMB_W, THUMB_H) if path else None
+        except GLib.Error:
+            pix = None
+        GLib.idle_add(self.show_picture, pix)
+
+    def show_picture(self, pix):
+        if self.alive and pix:
+            self.image.set_from_pixbuf(pix)
+        return False
+
+
+class Mock(Gtk.DrawingArea):
+    """The desktop in small with the colors being tried: the bar's islands,
+    a window with the focused border, a popup with a "Yes" button."""
+
+    W, H = 256, 144
+
+    def __init__(self):
+        super().__init__()
+        self.set_size_request(self.W, self.H)
+        self.pix, self.colors, self.light = None, {}, 1.0
+        self.connect("draw", self.draw)
+
+    def set_picture(self, path):
+        def work():
+            thumb = wallpaper.thumb(path)
+            try:
+                pix = cover(GdkPixbuf.Pixbuf.new_from_file(str(thumb)), self.W, self.H) if thumb else None
+            except GLib.Error:
+                pix = None
+            GLib.idle_add(lambda: (setattr(self, "pix", pix), self.queue_draw(), False)[2])
+        threading.Thread(target=work, daemon=True).start()
+
+    def update(self, colors, light):
+        self.colors, self.light = colors, light
+        self.queue_draw()
+
+    def draw(self, _w, cr):
+        if not self.colors:
+            return False
+        W, H = self.W, self.H
+
+        def fill(key, x, y, w, h, r=3):
+            cr.set_source_rgb(*wallpaper.rgb(self.colors[key]))
+            rounded(cr, x, y, w, h, min(r, w / 2, h / 2))
+            cr.fill()
+
+        rounded(cr, 0, 0, W, H, 6)
+        cr.clip()
+        if self.pix:
+            Gdk.cairo_set_source_pixbuf(cr, self.pix, 0, 0)
+            cr.paint()
+        else:
+            fill("bg1", 0, 0, W, H, 0)
+        # Brightness of the picture, roughly
+        if self.light < 1:
+            cr.set_source_rgba(0, 0, 0, 1 - self.light)
+            cr.paint()
+        elif self.light > 1:
+            cr.set_source_rgba(1, 1, 1, (self.light - 1) * 0.6)
+            cr.paint()
+        # Islands hanging from the top
+        fill("island", 4, -4, 42, 15)
+        for i, key in enumerate(("hi", "mute", "mute")):
+            fill(key, 10 + i * 9, 3, 4, 4, 2)
+        fill("island", W / 2 - 30, -4, 60, 15)
+        fill("fg", W / 2 - 18, 4, 36, 3)
+        fill("island", W - 50, -4, 46, 15)
+        fill("mute", W - 42, 4, 30, 3)
+        # A window with the focused border
+        fill("accent", 10, 20, 142, 116, 5)
+        fill("bg0", 12, 22, 138, 112, 4)
+        for i, (key, width) in enumerate((("hi", 70), ("fg", 110), ("fg", 96), ("sub", 104),
+                                           ("mute", 60), ("green", 40), ("blue", 80))):
+            fill(key if key in self.colors else "fg", 20, 32 + i * 13, width, 4, 2)
+        # A popup with a "Yes" button
+        fill("surface", 162, 20, 84, 70, 5)
+        fill("mute", 170, 30, 34, 3)
+        fill("bg2", 170, 40, 68, 14, 3)
+        fill("fg", 175, 46, 40, 3)
+        fill("accent", 170, 62, 68, 18, 3)
+        fill("bg0", 194, 70, 20, 3)
+        return False
+
+
+def slider_row(title, lo, hi, value, on_change, unit=""):
+    row = Gtk.Box(spacing=8)
+    row.pack_start(label(title, ["small"], width=10), False, False, 0)
+    shown = label(f"{int(value)}{unit}", ["muted", "small"], xalign=1.0, width=4)
+
+    def change(v):
+        shown.set_text(f"{int(v)}{unit}")
+        on_change(int(v))
+
+    s = hslider(lo, hi, change)
+    s.set_value(value)
+    row.pack_start(s, True, True, 0)
+    row.pack_end(shown, False, False, 0)
+    row.scale, row.shown, row.unit = s, shown, unit
+    return row
+
+
+def set_slider(row, value):
+    row.scale.set_value(value)
+    row.shown.set_text(f"{int(value)}{row.unit}")
+
+
+class Wallpapers(Gtk.Box):
+    """Wallpaper panel: search Wallhaven, pick one already here, take the
+    colors from it (or keep the theme's), edit the picture, try it all on
+    the desktop, then save it or go back.
+
+    Nothing is saved until "Save" (asked once more); closing the panel while
+    trying something puts back what is saved (wallpaper.py has the rest).
+
+    "Preview" shows the desktop clean: every display goes to an empty
+    workspace, the bar hides, and the panel becomes one slim bar at the top
+    to keep it, drop it, or go back to adjusting it."""
+
+    WIDTH = CELL_W * COLUMNS + 6 * (COLUMNS - 1)
+    PREVIEW = "preview"  # name of the empty workspaces
+    # A terminal in the middle of the preview, with ufetch and the 16
+    # terminal colors; sway floats it by this app_id (sway config)
+    TERMINAL = "wallpaper-preview"
+    # (ufetch ends with a blank line; the last row has no newline, so
+    # nothing scrolls)
+    FETCH = ("printf '\\033[?25l'; clear; ~/.local/bin/ufetch; "
+             "for row in 4 10; do [ $row = 10 ] && echo; printf '  '; for i in 0 1 2 3 4 5 6 7; do "
+             "printf '\\033[%s%sm    ' $row $i; done; printf '\\033[0m'; done; exec sleep infinity")
+
+    def __init__(self):
+        super().__init__()
+        self.full = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        self.full.set_size_request(self.WIDTH, -1)
+        self.pack_start(self.full, False, False, 0)
+        self.slim = Gtk.Box(spacing=8)
+        self.slim.set_no_show_all(True)
+        self.pack_start(self.slim, False, False, 0)
+        self.previewing = None  # {"shown": {output: workspace}, "focus": workspace, "output": output}
+        self.terminal = None
+        self.sample_notes = []  # ids of the sample notifications
+        self.with_examples = True
+        self.base = wallpaper.base_palette()
+        self.saved_path, self.saved_colors = wallpaper.saved()
+        self.filters = dict(wallpaper.FILTERS)
+        self.results = {"items": [], "page": 1, "last": 1, "total": 0, "seed": None}
+        self.query = 0
+        self.local_page = 0
+        self.picked = None  # ("wallhaven", item) or ("local", path)
+        self.busy = None
+        self.asking = None  # "save" or "delete"
+        self.found = []
+        self.load_saved()
+        self.screen = self.wanted()  # what is on the desktop
+
+        top = Gtk.Box(spacing=4)
+        top.pack_start(label("WALLPAPER", ["heading"]), True, True, 0)
+        self.tabs = {}
+        for name, text in (("wallhaven", "Wallhaven"), ("downloaded", "Downloaded"), ("colors", "Colors")):
+            b = css(Gtk.Button(label=text), "tab")
+            b.connect("clicked", lambda _, n=name: self.show_tab(n))
+            top.pack_start(b, False, False, 0)
+            self.tabs[name] = b
+        self.full.pack_start(top, False, False, 0)
+
+        # All tabs the same height, so switching doesn't resize the panel
+        self.pages = Gtk.Stack(transition_type=Gtk.StackTransitionType.CROSSFADE, transition_duration=150)
+        self.pages.add_named(self.search_page(), "wallhaven")
+        self.pages.add_named(self.local_page_box(), "downloaded")
+        self.pages.add_named(self.colors_page(), "colors")
+        self.full.pack_start(self.pages, False, False, 0)
+
+        # About the picked wallpaper, and what can be done; as tall as its
+        # buttons even when it has none
+        self.bar = Gtk.Box(spacing=8)
+        self.bar.set_size_request(-1, 36)
+        self.full.pack_start(self.bar, False, False, 0)
+
+        atexit.register(self.put_back)
+        self.full.show_all()
+        self.filter_revealer.set_reveal_child(False)
+        self.show_tab("wallhaven")
+        self.show_local()
+        self.load_colors()
+        self.search()
+
+    # ------------------------------------------------------------- state
+
+    def load_saved(self):
+        """Controls as saved: the picture behind the wallpaper, its edits,
+        and its colors (as saved, until a control is touched)."""
+        source, self.edits = wallpaper.original(self.saved_path)
+        self.source = str(source)
+        self.mode = "wallpaper" if self.saved_colors else "theme"
+        self.override = dict(self.saved_colors) if self.saved_colors else None
+        self.style = dict(wallpaper.STYLE)
+        self.accent = None
+
+    def colors(self):
+        if self.mode == "theme":
+            return {}
+        if self.override is not None:
+            return self.override
+        return wallpaper.derive(self.base, self.found, self.accent, **self.style)
+
+    def wanted(self):
+        return (self.source, tuple(self.edits.values()), tuple(sorted(self.colors().items())))
+
+    def trying(self):
+        """Something on the desktop that is not saved."""
+        return self.screen != self.saved_key
+
+    @property
+    def saved_key(self):
+        source, edits = wallpaper.original(self.saved_path)
+        return (str(source), tuple(edits.values()), tuple(sorted(self.saved_colors.items())))
+
+    # -------------------------------------------------------------- tabs
+
+    def show_tab(self, name):
+        self.pages.set_visible_child_name(name)
+        for n, b in self.tabs.items():
+            css(b, "on", on=n == name)
+        if name == "colors":
+            self.refresh_colors()
+        else:
+            self.show_bar()
+
+    def pager(self, on_step):
+        row = Gtk.Box(spacing=8)
+        prev = icon_button("left", css=["small"], on_click=lambda: on_step(-1))
+        nxt = icon_button("right", css=["small"], on_click=lambda: on_step(1))
+        # A spinner beside the text while a page loads; it keeps its room
+        # when stopped, so nothing moves
+        middle = Gtk.Box(spacing=8, halign=Gtk.Align.CENTER)
+        spinner = Spinner()
+        text = label(css=["muted", "small"], xalign=0.5)
+        middle.pack_start(spinner, False, False, 0)
+        middle.pack_start(text, False, False, 0)
+        row.pack_start(prev, False, False, 0)
+        row.pack_start(middle, True, True, 0)
+        row.pack_end(nxt, False, False, 0)
+        row.prev, row.next, row.text, row.spinner = prev, nxt, text, spinner
+        return row
+
+    def slots(self, grid, n):
+        """Empty cells where the pictures will be, so nothing changes size."""
+        for c in grid.get_children():
+            c.destroy()
+        for i in range(n):
+            cell = css(Gtk.Box(), "slot")
+            cell.set_size_request(CELL_W, CELL_H)
+            grid.attach(cell, i % COLUMNS, i // COLUMNS, 1, 1)
+        grid.show_all()
+
+    def fill(self, grid, entries):
+        """entries: [(thumbnail source, what picking it picks, in use)]"""
+        for c in grid.get_children():
+            c.destroy()
+        for i, (source, what, current) in enumerate(entries):
+            t = Thumb(source, lambda w=what: self.pick(w), current)
+            t.what = what
+            css(t, "picked", on=what == self.picked)
+            grid.attach(t, i % COLUMNS, i // COLUMNS, 1, 1)
+        grid.show_all()
+
+    def in_use(self, path):
+        return str(path) == str(wallpaper.original(self.saved_path)[0])
+
+    # --------------------------------------------------------- wallhaven
+
+    def search_page(self):
+        page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        row = Gtk.Box(spacing=6)
+        self.entry = css(Gtk.SearchEntry(placeholder_text="Search Wallhaven", hexpand=True), "search")
+        self.entry.connect("activate", lambda _: self.search())
+        row.pack_start(self.entry, True, True, 0)
+        self.filter_button = icon_button("right", "Filters", self.toggle_filters, css=["small"])
+        self.filter_button.get_child().reorder_child(self.filter_button.get_child().get_children()[0], -1)
+        row.pack_end(self.filter_button, False, False, 0)
+        page.pack_start(row, False, False, 0)
+
+        filters = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        self.paints = []
+        filters.pack_start(self.choice_row("Type", [("general", "General"), ("anime", "Anime"),
+                                                    ("people", "People")]), False, False, 0)
+        purity = [("sfw", "SFW"), ("sketchy", "Sketchy")] + ([("nsfw", "NSFW")] if wallpaper.api_key() else [])
+        filters.pack_start(self.choice_row("Content", purity), False, False, 0)
+        filters.pack_start(self.choice_row("Sort", wallpaper.SORTS, "sorting"), False, False, 0)
+        self.range_row = self.choice_row("Top of", wallpaper.RANGES, "range")
+        self.range_row.set_sensitive(self.filters["sorting"] == "toplist")
+        filters.pack_start(self.range_row, False, False, 0)
+        filters.pack_start(self.choice_row("At least", wallpaper.SIZES, "atleast"), False, False, 0)
+        filters.pack_start(self.choice_row("Shape", wallpaper.RATIOS, "ratio"), False, False, 0)
+        filters.pack_start(self.color_row(), False, False, 0)
+        self.filter_revealer = Gtk.Revealer(transition_type=Gtk.RevealerTransitionType.SLIDE_DOWN,
+                                            transition_duration=200)
+        self.filter_revealer.add(filters)
+        page.pack_start(self.filter_revealer, False, False, 0)
+
+        self.wh_grid = Gtk.Grid(row_spacing=6, column_spacing=6)
+        self.wh_scroll = Gtk.ScrolledWindow()
+        self.wh_scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        height = THUMB_H * 3 + 4 * 3 + 12 + 4
+        self.wh_scroll.set_min_content_height(height)
+        self.wh_scroll.set_max_content_height(height)
+        self.wh_scroll.add(self.wh_grid)
+        # Nothing found, or no connection: a small card over the grid
+        self.wh_status = label(css=["muted"], xalign=0.5)
+        self.wh_status.set_line_wrap(True)
+        self.wh_status.set_max_width_chars(40)
+        self.wh_notice = css(Gtk.Box(halign=Gtk.Align.CENTER, valign=Gtk.Align.CENTER), "notice")
+        self.wh_notice.add(self.wh_status)
+        self.wh_notice.set_no_show_all(True)
+        self.wh_status.show()
+        status = Gtk.Overlay()
+        status.add(self.wh_scroll)
+        status.add_overlay(self.wh_notice)
+        status.set_overlay_pass_through(self.wh_notice, True)
+        page.pack_start(status, False, False, 0)
+        self.slots(self.wh_grid, COLUMNS * 3)
+
+        self.wh_pager = self.pager(lambda step: self.search(self.results["page"] + step))
+        page.pack_start(self.wh_pager, False, False, 0)
+        return page
+
+    def toggle_filters(self):
+        opening = not self.filter_revealer.get_reveal_child()
+        self.filter_revealer.set_reveal_child(opening)
+        self.filter_button.get_child().get_children()[-1].set_text(ICON["down" if opening else "right"])
+
+    def choice_row(self, title, options, key=None):
+        """A filter: one of the options (key), or without a key, each option
+        an on/off filter of its own."""
+        row = Gtk.Box(spacing=4)
+        row.pack_start(label(title, ["muted", "small"], width=9), False, False, 0)
+        buttons = {}
+
+        def paint():
+            for value, b in buttons.items():
+                css(b, "yes", on=self.filters[value] if key is None else self.filters[key] == value)
+
+        def pick(value):
+            if key is None:
+                self.filters[value] = not self.filters[value]
+            else:
+                self.filters[key] = value
+            for p in self.paints:
+                p()
+            self.range_row.set_sensitive(self.filters["sorting"] == "toplist")
+            self.search()
+
+        for value, text in options:
+            b = css(Gtk.Button(label=text), "filter")
+            b.connect("clicked", lambda _, v=value: pick(v))
+            row.pack_start(b, False, False, 0)
+            buttons[value] = b
+        self.paints.append(paint)
+        paint()
+        return row
+
+    def color_row(self):
+        row = Gtk.Box(spacing=4)
+        row.pack_start(label("Color", ["muted", "small"], width=9, xalign=0.0), False, False, 0)
+        grid = Gtk.Grid(row_spacing=2, column_spacing=2)
+        buttons = {}
+
+        def paint():
+            for value, b in buttons.items():
+                css(b, "yes", on=self.filters["color"] == value)
+
+        def pick(value):
+            self.filters["color"] = "" if self.filters["color"] == value else value
+            paint()
+            self.search()
+
+        anyone = css(Gtk.Button(label="Any"), "filter")
+        anyone.connect("clicked", lambda _: pick(""))
+        buttons[""] = anyone
+        grid.attach(anyone, 0, 0, 1, 2)
+        for i, c in enumerate(wallpaper.COLORS):
+            b = css(Gtk.Button(), "chip")
+            b.add(Chip([c], 18, 12))
+            b.set_tooltip_text(f"#{c}")
+            b.connect("clicked", lambda _, v=c: pick(v))
+            grid.attach(b, 1 + i % 15, i // 15, 1, 1)
+            buttons[c] = b
+        row.pack_start(grid, False, False, 0)
+        self.paints.append(paint)
+        paint()
+        return row
+
+    def search(self, page=1):
+        self.query += 1
+        query = self.query
+        self.filters["q"] = self.entry.get_text().strip()
+        f = dict(self.filters)
+        seed = self.results.get("seed") if page != 1 else None
+        self.loading(True)
+        if not self.results["items"]:
+            self.wh_pager.text.set_text("Searching Wallhaven…")
+
+        def work():
+            try:
+                res, err = wallpaper.search(f, page, seed), None
+            except OSError as e:
+                res, err = None, str(getattr(e, "reason", e))
+            GLib.idle_add(self.show_results, query, res, err)
+        threading.Thread(target=work, daemon=True).start()
+
+    def show_results(self, query, res, err):
+        if query != self.query:
+            return False  # an older search
+        self.loading(False)
+        if err:
+            self.notice(f"Couldn't reach Wallhaven: {err}")
+            self.wh_pager.text.set_text("")
+            return False
+        self.results = res
+        self.fill(self.wh_grid, [(w["thumb"], ("wallhaven", w), self.in_use(wallpaper.file_of(w)))
+                                 for w in res["items"]])
+        if not res["items"]:
+            self.slots(self.wh_grid, COLUMNS * 3)
+        self.notice("" if res["items"] else "No wallpapers found")
+        self.wh_pager.text.set_text(f"Page {res['page']} of {max(1, res['last'])} · {res['total']} wallpapers")
+        self.wh_pager.prev.set_sensitive(res["page"] > 1)
+        self.wh_pager.next.set_sensitive(res["page"] < res["last"])
+        self.wh_scroll.get_vadjustment().set_value(0)
+        return False
+
+    def loading(self, on):
+        """While a page loads: the spinner turns, and the pictures there
+        fade until the new ones come."""
+        pager = self.wh_pager
+        (pager.spinner.start if on else pager.spinner.stop)()
+        css(self.wh_scroll, "loading", on=on)
+        self.wh_scroll.set_sensitive(not on)
+        pager.prev.set_sensitive(not on and self.results["page"] > 1)
+        pager.next.set_sensitive(not on and self.results["page"] < self.results["last"])
+        if on:
+            self.wh_notice.hide()
+
+    def notice(self, text):
+        self.wh_status.set_text(text)
+        self.wh_notice.set_visible(bool(text))
+
+    # -------------------------------------------------------- downloaded
+
+    def local_page_box(self):
+        page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        page.pack_start(label("In ~/Pictures/Wallpapers, and the ones that come with the dotfiles",
+                              ["muted", "small"]), False, False, 0)
+        self.local_grid = Gtk.Grid(row_spacing=6, column_spacing=6)
+        self.local_grid.set_size_request(-1, THUMB_H * 3 + 4 * 3 + 12)
+        self.local_grid.set_valign(Gtk.Align.START)
+        page.pack_start(self.local_grid, True, True, 0)
+        self.local_pager = self.pager(self.local_step)
+        page.pack_end(self.local_pager, False, False, 0)
+        return page
+
+    def local_step(self, step):
+        self.local_page += step
+        self.show_local()
+
+    def show_local(self):
+        files = wallpaper.downloaded()
+        pages = max(1, -(-len(files) // LOCAL_PAGE))
+        self.local_page = max(0, min(self.local_page, pages - 1))
+        shown = files[self.local_page * LOCAL_PAGE:(self.local_page + 1) * LOCAL_PAGE]
+        self.fill(self.local_grid, [(str(p), ("local", str(p)), self.in_use(p)) for p in shown])
+        self.local_pager.text.set_text(f"Page {self.local_page + 1} of {pages} · "
+                                       f"{len(files)} wallpaper{'s' if len(files) != 1 else ''}")
+        self.local_pager.prev.set_sensitive(self.local_page > 0)
+        self.local_pager.next.set_sensitive(self.local_page < pages - 1)
+
+    # ------------------------------------------------------------ colors
+
+    def colors_page(self):
+        page = Gtk.Box(spacing=20)
+        left = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        modes = Gtk.Box(spacing=4, homogeneous=True)
+        self.mode_buttons = {}
+        for mode, text in (("theme", "Theme colors"), ("wallpaper", "From the wallpaper")):
+            b = css(Gtk.Button(label=text), "choice")
+            b.connect("clicked", lambda _, m=mode: self.set_mode(m))
+            modes.pack_start(b, True, True, 0)
+            self.mode_buttons[mode] = b
+        left.pack_start(modes, False, False, 0)
+
+        self.tuning = css(Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8), "tuning")
+        self.tuning.pack_start(label("ACCENT", ["heading"]), False, False, 0)
+        self.accent_row = Gtk.Box(spacing=4)
+        self.tuning.pack_start(self.accent_row, False, False, 0)
+        self.tuning.pack_start(label("STYLE", ["heading"]), False, False, 4)
+        presets = Gtk.Box(spacing=4, homogeneous=True)
+        self.preset_chips = []
+        for name, values in wallpaper.PRESETS:
+            b = css(Gtk.Button(), "choice")
+            inner = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+            chip = Chip([], 44, 10)
+            chip.set_halign(Gtk.Align.CENTER)
+            inner.pack_start(chip, False, False, 0)
+            inner.pack_start(label(name, ["small"], xalign=0.5), False, False, 0)
+            b.add(inner)
+            b.connect("clicked", lambda _, v=values: self.set_style(v))
+            presets.pack_start(b, True, True, 0)
+            self.preset_chips.append((chip, values))
+        self.tuning.pack_start(presets, False, False, 0)
+        self.tint_row = slider_row("Tint", 0, 40, self.style["tint"] * 100,
+                                   lambda v: self.tune("tint", v / 100), "%")
+        self.shade_row = slider_row("Background", -6, 6, self.style["shade"] * 100,
+                                    lambda v: self.tune("shade", v / 100))
+        self.light_row = slider_row("Accent", 55, 92, self.style["light"] * 100,
+                                    lambda v: self.tune("light", v / 100), "%")
+        for row in (self.tint_row, self.shade_row, self.light_row):
+            self.tuning.pack_start(row, False, False, 0)
+        left.pack_start(self.tuning, False, False, 0)
+
+        left.pack_start(label("PICTURE", ["heading"]), False, False, 4)
+        if wallpaper.has_magick():
+            self.edit_rows = {
+                "brightness": slider_row("Brightness", 40, 130, 100, lambda v: self.set_edit("brightness", v), "%"),
+                "saturation": slider_row("Saturation", 0, 150, 100, lambda v: self.set_edit("saturation", v), "%"),
+                "blur": slider_row("Blur", 0, 20, 0, lambda v: self.set_edit("blur", v)),
+            }
+            for row in self.edit_rows.values():
+                left.pack_start(row, False, False, 0)
+        else:
+            self.edit_rows = {}
+            left.pack_start(label("Install ImageMagick to edit the picture", ["muted", "small"]), False, False, 0)
+        page.pack_start(left, True, True, 0)
+
+        right = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        right.pack_start(label("PREVIEW", ["heading"]), False, False, 0)
+        self.mock = Mock()
+        right.pack_start(self.mock, False, False, 0)
+        self.picture_name = label(css=["muted", "small"], ellipsize=True)
+        self.picture_name.set_max_width_chars(30)
+        right.pack_start(self.picture_name, False, False, 0)
+        page.pack_end(right, False, False, 0)
+        return page
+
+    def load_colors(self, then=None):
+        """Swatches of the picture the Colors page works on."""
+        source = self.source
+        self.mock.set_picture(source)
+
+        def work():
+            found = wallpaper.swatches(source)
+            GLib.idle_add(self.got_colors, source, found, then)
+        threading.Thread(target=work, daemon=True).start()
+
+    def got_colors(self, source, found, then):
+        if source != self.source:
+            return False
+        self.found = found
+        for c in self.accent_row.get_children():
+            c.destroy()
+        for i, (color, share) in enumerate(found):
+            b = css(Gtk.Button(), "chip")
+            b.add(Chip([color], 36, 22))
+            b.set_tooltip_text(f"#{color} · {share:.0%} of the picture")
+            b.connect("clicked", lambda _, i=i: self.set_accent(i))
+            self.accent_row.pack_start(b, False, False, 0)
+        self.accent_row.show_all()
+        for chip, values in self.preset_chips:
+            d = {**self.base, **wallpaper.derive(self.base, found, self.accent, **values)}
+            chip.set_colors([d[k] for k in ("bg0", "bg2", "mute", "fg", "accent")])
+        self.refresh_colors()
+        if then:
+            then()
+        return False
+
+    def refresh_colors(self):
+        for m, b in self.mode_buttons.items():
+            css(b, "yes", on=m == self.mode)
+        self.tuning.set_sensitive(self.mode == "wallpaper")
+        pick = self.accent if self.accent is not None else wallpaper.vivid(self.found)
+        for i, b in enumerate(self.accent_row.get_children()):
+            css(b, "yes", on=i == pick and self.override is None)
+        set_slider(self.tint_row, self.style["tint"] * 100)
+        set_slider(self.shade_row, self.style["shade"] * 100)
+        set_slider(self.light_row, self.style["light"] * 100)
+        for key, row in self.edit_rows.items():
+            set_slider(row, self.edits[key])
+        self.mock.update({**self.base, **self.colors()}, self.edits["brightness"] / 100)
+        self.picture_name.set_text(os.path.basename(self.source))
+        self.show_bar()
+
+    def touched(self):
+        self.override = None
+        self.refresh_colors()
+
+    def set_mode(self, mode):
+        self.mode = mode
+        self.touched()
+
+    def set_accent(self, i):
+        self.accent = i
+        self.touched()
+
+    def set_style(self, values):
+        self.style = dict(values)
+        self.touched()
+
+    def tune(self, key, value):
+        self.style[key] = value
+        self.touched()
+
+    def set_edit(self, key, value):
+        self.edits[key] = value
+        self.refresh_colors()
+
+    def as_saved(self):
+        old = self.source
+        self.load_saved()
+        if self.source != old:
+            self.load_colors()
+        self.refresh_colors()
+
+    # ------------------------------------------------------- the bar
+
+    def pick(self, what):
+        self.picked = what
+        self.asking = None
+        for grid in (self.wh_grid, self.local_grid):
+            for t in grid.get_children():
+                css(t, "picked", on=t.what == what)
+        self.show_bar()
+
+    def about(self):
+        kind, what = self.picked
+        if kind == "wallhaven":
+            return f"{what['resolution'].replace('x', '×')} · {what['size'] / 1e6:.1f} MB · {what['category']}"
+        info = GdkPixbuf.Pixbuf.get_file_info(what)
+        size = f" · {info[1]}×{info[2]}" if info and info[0] else ""
+        return os.path.basename(what) + size + (" · in use" if self.in_use(what) else "")
+
+    def show_bar(self):
+        for c in self.bar.get_children():
+            c.destroy()
+        info = label(css=["muted"], ellipsize=True)
+        info.set_valign(Gtk.Align.CENTER)
+        self.bar.pack_start(info, True, True, 0)
+        buttons = []
+
+        def button(text, action, yes=False):
+            b = Gtk.Button(label=text)
+            if yes:
+                css(b, "yes")
+            b.connect("clicked", lambda _: action())
+            buttons.append(b)
+
+        # The Colors page works on what is being tried, not on the picked one
+        picked_new = (self.picked and self.pages.get_visible_child_name() != "colors"
+                      and not (self.picked[0] == "local" and self.picked[1] == self.source))
+        if self.busy:
+            info.set_text(self.busy)
+        elif self.asking == "save":
+            colors = " and these colors" if self.screen[2] else " with the theme colors"
+            info.set_text(f"Keep this wallpaper{colors}?")
+            info.get_style_context().remove_class("muted")
+            button("No", lambda: self.ask(None))
+            button("Save", self.save, yes=True)
+        elif self.asking == "delete":
+            info.set_text(f"Delete {os.path.basename(self.picked[1])}?")
+            info.get_style_context().remove_class("muted")
+            button("No", lambda: self.ask(None))
+            button("Delete", self.delete, yes=True)
+        elif self.trying() or self.wanted() != self.screen:
+            if self.wanted() != self.screen:
+                info.set_text("Changed: try it on the desktop before saving")
+            else:
+                info.set_text("Trying it on the desktop · not saved yet")
+            if self.trying():
+                button("Discard", self.discard)
+            else:
+                button("Undo", self.as_saved)
+            if picked_new:
+                button("Try this one", self.try_picked)
+            if self.wanted() != self.screen:
+                button("Try", self.apply, yes=True)
+            elif self.trying():
+                button("Preview", self.start_preview)
+                button("Save…", lambda: self.ask("save"), yes=True)
+        elif self.picked:
+            info.set_text(self.about())
+            kind, what = self.picked
+            if kind == "wallhaven":
+                button("Wallhaven", lambda: spawn("xdg-open", what["url"]))
+            elif wallpaper.can_delete(what) and not self.in_use(what):
+                button("Delete…", lambda: self.ask("delete"))
+            if picked_new:
+                button("Try it", self.try_picked, yes=True)
+        else:
+            info.set_text("Pick a wallpaper to try it on the desktop")
+        for b in buttons:
+            self.bar.pack_start(b, False, False, 0)
+        self.bar.show_all()
+
+    def ask(self, what):
+        self.asking = what
+        self.show_bar()
+
+    def set_busy(self, text):
+        self.busy = text
+        self.show_bar()
+        return False
+
+    def fail(self, text):
+        self.busy = None
+        self.show_bar()
+        self.bar.get_children()[0].set_text(text)
+        return False
+
+    # ----------------------------------------------------------- actions
+
+    def try_picked(self):
+        kind, what = self.picked
+        if kind == "local" and not os.path.exists(what):
+            # Deleted since the list was made
+            self.picked = None
+            self.show_local()
+            self.fail(f"{os.path.basename(what)} is gone")
+            return
+        if kind == "local":
+            self.use_source(what)
+            return
+        self.set_busy("Downloading…")
+
+        def progress(f):
+            GLib.idle_add(self.set_busy, f"Downloading… {int(f * 100)}%")
+
+        def work():
+            try:
+                path = wallpaper.download(what, progress)
+            except OSError as e:
+                GLib.idle_add(self.fail, f"Couldn't download it: {getattr(e, 'reason', e)}")
+                return
+            GLib.idle_add(lambda: self.got_download(str(path)) or False)
+        threading.Thread(target=work, daemon=True).start()
+
+    def got_download(self, path):
+        self.show_local()
+        self.picked = ("local", path)
+        self.use_source(path)
+
+    def use_source(self, path):
+        """A new picture: fresh edits and colors, then on the desktop."""
+        self.source = path
+        self.edits = dict(wallpaper.EDIT)
+        self.accent = None
+        self.override = None
+        self.busy = "Reading its colors…"
+        self.load_colors(then=self.apply)
+
+    def apply(self):
+        """Puts the picture, its edits and the colors on the desktop."""
+        if self.busy and self.busy != "Reading its colors…":
+            return
+        wanted, colors, edits, source = self.wanted(), self.colors(), dict(self.edits), self.source
+        self.set_busy("Editing the picture…" if edits != wallpaper.EDIT else "Applying…")
+        same_colors = wanted[2] == self.screen[2]
+
+        def work():
+            path = str(wallpaper.edit(source, **edits))
+            if same_colors:
+                wallpaper.show(path, {**self.base, **colors}["bg1"])
+            else:
+                wallpaper.preview(path, colors)
+            GLib.idle_add(self.applied, wanted, not same_colors)
+        threading.Thread(target=work, daemon=True).start()
+
+    def applied(self, wanted, restyled):
+        self.screen = wanted
+        self.busy = None
+        if restyled:
+            restyle()
+        self.show_bar()
+        return False
+
+    def save(self):
+        self.asking = None
+        self.set_busy("Saving…")
+        colors = dict(self.screen[2])
+        path = str(wallpaper.edit(self.screen[0], **dict(zip(wallpaper.EDIT, self.screen[1]))))
+
+        def work():
+            wallpaper.save(path, colors)
+            GLib.idle_add(self.saved, path, colors)
+        threading.Thread(target=work, daemon=True).start()
+
+    def saved(self, path, colors):
+        self.saved_path, self.saved_colors = path, colors
+        self.busy = None
+        restyle()
+        self.show_local()
+        self.show_bar()
+        self.bar.get_children()[0].set_text("Saved")
+        return False
+
+    def discard(self):
+        self.asking = None
+        same_colors = self.screen[2] == self.saved_key[2]
+        self.set_busy("Putting it back…")
+
+        def work():
+            self.restore(same_colors)
+            GLib.idle_add(self.discarded, same_colors)
+        threading.Thread(target=work, daemon=True).start()
+
+    def restore(self, same_colors):
+        if same_colors:
+            wallpaper.show(self.saved_path, {**self.base, **self.saved_colors}["bg1"])
+        else:
+            wallpaper.revert()
+
+    def discarded(self, same_colors):
+        self.as_saved()
+        self.screen = self.saved_key
+        self.busy = None
+        if not same_colors:
+            restyle()
+        self.show_bar()
+        return False
+
+    def put_back(self):
+        """On the way out: nothing tried stays on the desktop."""
+        self.uncover()
+        if self.trying():
+            self.restore(self.screen[2] == self.saved_key[2])
+
+    # ----------------------------------------------------------- preview
+
+    def start_preview(self):
+        self.cover()
+        self.swap(lambda: self.show_slim(None))
+
+    def end_preview(self, then=None):
+        """Back to the full panel; then() runs once the desktop is back."""
+        def back():
+            self.uncover()
+            self.slim.hide()
+            css(self.get_parent(), "slim", on=False)
+            self.full.show()
+            self.show_bar()
+            if then:
+                then()
+        self.swap(back)
+
+    def swap(self, change):
+        top = self.get_toplevel()
+        top.swap(change) if hasattr(top, "swap") else change()
+
+    def show_slim(self, asking):
+        """The slim bar: what is being previewed, and what to do with it.
+        Both of its questions are made at once, side by side in a stack, so
+        it has the width of the longer one and doesn't change size."""
+        if asking:
+            self.slim_stack.set_visible_child_name("save")
+            return
+        self.full.hide()
+        css(self.get_parent(), "slim")
+        for c in self.slim.get_children():
+            c.destroy()
+        self.slim.pack_start(label(ICON["image"], ["icon", "muted"]), False, False, 0)
+        self.terminal_button = icon_button("terminal", css=["tab"], on_click=lambda: self.show_examples(
+            not self.with_examples))
+        self.terminal_button.set_tooltip_text("Examples: a terminal with ufetch and a notification")
+        css(self.terminal_button, "on", on=self.with_examples)
+        self.slim.pack_start(self.terminal_button, False, False, 0)
+        name = os.path.basename(self.source)
+        name = name if len(name) <= 28 else name[:27] + "…"
+        colors = " · wallpaper colors" if self.screen[2] else " · theme colors"
+        self.slim_stack = Gtk.Stack(transition_type=Gtk.StackTransitionType.CROSSFADE, transition_duration=150)
+        for page, text, buttons in (
+                ("preview", f"Previewing {name}{colors}",
+                 (("Adjust", self.end_preview, False),
+                  ("Don't keep", lambda: self.end_preview(self.discard), False),
+                  ("Keep…", lambda: self.show_slim("save"), True))),
+                ("save", f"Keep {name}{colors}?",
+                 (("No", lambda: self.slim_stack.set_visible_child_name("preview"), False),
+                  ("Save", lambda: self.end_preview(self.save), True)))):
+            row = Gtk.Box(spacing=8)
+            question = label(text, ["muted"] if page == "preview" else [])
+            question.set_valign(Gtk.Align.CENTER)
+            row.pack_start(question, True, True, 12)
+            for t, action, yes in buttons:
+                b = Gtk.Button(label=t)
+                if yes:
+                    css(b, "yes")
+                b.connect("clicked", lambda _, a=action: a())
+                row.pack_start(b, False, False, 0)
+            self.slim_stack.add_named(row, page)
+        self.slim.pack_start(self.slim_stack, True, True, 0)
+        self.slim.set_no_show_all(False)
+        self.slim.show_all()
+        self.slim_stack.set_visible_child_name("preview")
+
+    def before_close(self):
+        """Esc while previewing: back to adjusting it."""
+        if self.previewing and self.slim.get_visible():
+            self.end_preview()
+            return True
+        return False
+
+    def click_outside(self):
+        """While previewing, clicks on the desktop do nothing: it is only to
+        look at (the terminal there can't be used either, since the panel
+        has the keyboard and its backdrop takes the clicks)."""
+        return bool(self.previewing)
+
+    def cover(self):
+        """Hides the windows (an empty workspace on every display) and the bar."""
+        if self.previewing:
+            return
+        spaces = json.loads(run("swaymsg", "-t", "get_workspaces") or "[]")
+        focused = next((w for w in spaces if w["focused"]), None)
+        self.previewing = {"shown": {w["output"]: w["name"] for w in spaces if w["visible"]},
+                           "focus": focused and focused["name"], "output": focused and focused["output"]}
+        for i, output in enumerate(self.previewing["shown"]):
+            run("swaymsg", f"focus output {output}; workspace {self.PREVIEW}-{i}")
+        if self.previewing["output"]:
+            run("swaymsg", f"focus output {self.previewing['output']}")
+        run("pkill", "-USR1", "-x", "waybar")  # toggles: hidden
+        if self.with_examples:
+            self.show_examples(True)
+
+    def show_examples(self, on):
+        """Things that show the colors: a terminal with ufetch and two
+        notifications, one with a picture (mako keeps them until the preview
+        ends, out of the history: mako config)."""
+        self.with_examples = on
+        if hasattr(self, "terminal_button"):
+            css(self.terminal_button, "on", on=on)
+        if on and not self.sample_notes and self.previewing:
+            picture = wallpaper.square(self.source)
+            notes = [["Wallpaper preview", "A notification, with these colors"],
+                     ["-i", str(picture), os.path.basename(self.source), "And one with a picture"]
+                     if picture else None]
+            self.sample_notes = [run("notify-send", "-a", "Wallpaper", "-c", "preview", "-p", *n)
+                                 for n in notes if n]
+        elif not on:
+            for note in self.sample_notes:
+                run("makoctl", "dismiss", "-n", note)
+            self.sample_notes = []
+        if on and not self.terminal and self.previewing:
+            # Just the size of what it prints: ufetch and the two rows of
+            # colors, with a cell of room around
+            fetch = re.sub(r"\x1b\[[0-9;?]*[A-Za-z]|\x1b\(B", "", run(os.path.expanduser("~/.local/bin/ufetch")))
+            lines = fetch.splitlines() or [""]
+            columns = max(max(len(l) for l in lines), 2 + 8 * 4) + 2
+            self.terminal = subprocess.Popen(
+                ["alacritty", "--class", self.TERMINAL,
+                 "-o", f"window.dimensions.columns={columns}", "-o", f"window.dimensions.lines={len(lines) + 3}",
+                 "-e", "sh", "-c", self.FETCH],
+                start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            self.place_terminal(time.monotonic())
+        elif not on and self.terminal:
+            self.terminal.terminate()
+            self.terminal = None
+
+    def place_terminal(self, started):
+        """Down in the corner, out of the way of the picture. It opens
+        invisible (sway config) and shows up once there, so it doesn't jump."""
+        def find(node):
+            for c in node.get("nodes", []) + node.get("floating_nodes", []):
+                if c.get("app_id") == self.TERMINAL:
+                    return c
+                found = find(c)
+                if found:
+                    return found
+            return None
+
+        def check():
+            if not self.terminal:
+                return False
+            win = find(json.loads(run("swaymsg", "-t", "get_tree") or "{}"))
+            if not win or not win["rect"]["width"]:
+                return time.monotonic() - started < 3  # keep looking
+            outputs = json.loads(run("swaymsg", "-t", "get_outputs") or "[]")
+            out = next((o["rect"] for o in outputs if o.get("focused")), None)
+            if out:
+                margin = 24
+                x = out["x"] + out["width"] - win["rect"]["width"] - margin
+                y = out["y"] + out["height"] - win["rect"]["height"] - margin
+                run("swaymsg", f'[app_id="{self.TERMINAL}"] move absolute position {x} {y}, opacity 1')
+            return False
+        GLib.timeout_add(50, check)
+
+    def uncover(self):
+        if not self.previewing:
+            return
+        self.show_examples(False)
+        self.with_examples = True
+        shown, focus = self.previewing["shown"], self.previewing["focus"]
+        self.previewing = None
+        for output, ws in shown.items():
+            run("swaymsg", f"focus output {output}; workspace {quote(ws)}")
+        if focus:
+            run("swaymsg", f"workspace {quote(focus)}")
+        run("pkill", "-USR1", "-x", "waybar")  # shown again
+
+    def delete(self):
+        wallpaper.delete(self.picked[1])
+        self.picked = None
+        self.asking = None
+        self.show_local()
+        self.show_bar()
+
+
 # ---------------------------------------------------------------- window
 
 def transparent(window):
@@ -1692,8 +2861,10 @@ class Panel(Gtk.Window):
 
         frame = Gtk.Box()
         frame.get_style_context().add_class("panel")
-        frame.add(Menu(mode) if mode in ("sound", "displays", "bluetooth") else
-                  {"media": Media, "calendar": Calendar, "menu": Menu, "network": Network, "updates": Updates}[mode]())
+        self.content = (Menu(mode) if mode in ("sound", "displays", "bluetooth") else
+                        {"media": Media, "calendar": Calendar, "menu": Menu, "network": Network, "updates": Updates,
+                         "wallpaper": Wallpapers}[mode]())
+        frame.add(self.content)
         # Slides down from the bar when it opens, and back up when it closes
         self.revealer = Gtk.Revealer(transition_type=Gtk.RevealerTransitionType.SLIDE_DOWN,
                                      transition_duration=SLIDE_MS)
@@ -1728,7 +2899,30 @@ class Panel(Gtk.Window):
         GLib.timeout_add(SLIDE_MS + 30, lambda: self.set_size_request(-1, -1) or False)
         return False
 
-    def close(self):
+    def swap(self, change):
+        """Slides up, changes the content, slides back down at its new size."""
+        a = self.get_allocation()
+        self.set_size_request(a.width, a.height)
+        self.revealer.set_reveal_child(False)
+
+        def middle():
+            change()
+            room = self.revealer.get_child()
+            width = room.get_preferred_width()[1]
+            self.set_size_request(width, room.get_preferred_height_for_width(width)[1])
+            self.resize(1, 1)
+            self.revealer.set_reveal_child(True)
+            GLib.timeout_add(SLIDE_MS + 30, lambda: self.set_size_request(-1, -1) or False)
+            return False
+        GLib.timeout_add(SLIDE_MS + 20, middle)
+
+    def click_outside(self):
+        if not getattr(self.content, "click_outside", lambda: False)():
+            self.close()
+
+    def close(self, force=False):
+        if not force and getattr(self.content, "before_close", lambda: False)():
+            return True
         if not self.closing:
             self.closing = True
             # Same trick in reverse: freeze the size, slide the content up
@@ -1739,28 +2933,38 @@ class Panel(Gtk.Window):
         return True
 
 
-def main():
-    mode = sys.argv[1] if len(sys.argv) > 1 else ""
-    if mode not in ("media", "calendar", "menu", "network", "updates", "sound", "displays", "bluetooth"):
-        sys.exit("usage: panel.py media|calendar|menu|network|updates|sound|displays|bluetooth")
-    take_over(mode)
+STYLE = Gtk.CssProvider()
 
-    # Palette (`theme`) first, so the CSS can use @bg0, @fg, @accent...
+
+def restyle():
+    """Loads the palette (`theme`) and the CSS, which uses @bg0, @fg,
+    @accent...; again when the wallpaper panel tries new colors."""
     try:
         colors = open(os.path.expanduser("~/.config/waybar/colors.css"), "rb").read()
     except OSError:
         colors = b""
-    provider = Gtk.CssProvider()
-    provider.load_from_data(colors + CSS)
+    STYLE.load_from_data(colors + CSS)
+
+
+MODES = ("media", "calendar", "menu", "network", "updates", "sound", "displays", "bluetooth", "wallpaper")
+
+
+def main():
+    mode = sys.argv[1] if len(sys.argv) > 1 else ""
+    if mode not in MODES:
+        sys.exit("usage: panel.py " + "|".join(MODES))
+    take_over(mode)
+
+    restyle()
     Gtk.StyleContext.add_provider_for_screen(
-        Gtk.Window().get_screen(), provider, Gtk.STYLE_PROVIDER_PRIORITY_USER + 1)
+        Gtk.Window().get_screen(), STYLE, Gtk.STYLE_PROVIDER_PRIORITY_USER + 1)
 
     backdrop = Backdrop()
     backdrop.show_all()
     panel = Panel(mode)
-    backdrop.on_click = panel.close
+    backdrop.on_click = panel.click_outside
     # Closed by the bar (same button again): slide up first
-    GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGTERM, lambda: panel.close() and False)
+    GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGTERM, lambda: panel.close(force=True) and False)
     panel.show_all()
     GLib.timeout_add(30, panel.open_up)
     Gtk.main()

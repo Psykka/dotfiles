@@ -3,7 +3,7 @@
 # and power, kept apart from the apps. Power actions ask for confirmation.
 # Usage: menu.sh          the whole menu
 #        menu.sh ACTION   run one entry: keybindings clipboard screenshot
-#                         notifications sound displays bluetooth logo
+#                         notifications sound displays bluetooth wallpaper logo
 #                         lock logout reboot poweroff (the launcher uses this)
 
 # Font Awesome glyphs as UTF-8 bytes, since they are private-use characters
@@ -15,6 +15,7 @@ volume=$(printf '\357\200\250')
 display=$(printf '\357\204\210')
 bluetooth=$(printf '\357\212\223')
 shapes=$(printf '\357\230\237')
+image=$(printf '\357\200\276')
 lock=$(printf '\357\200\243')
 logout=$(printf '\357\213\265')
 reboot=$(printf '\357\213\271')
@@ -72,6 +73,7 @@ system() {
         printf '%s  Displays\n' "$display"
         # Only where there is a Bluetooth adapter
         [ -n "$(ls -A /sys/class/bluetooth 2>/dev/null)" ] && printf '%s  Bluetooth\n' "$bluetooth"
+        printf '%s  Wallpaper\n' "$image"
         printf '%s  Bar logo\n' "$shapes"
         printf '%s  Lock\n%s  Log out\n%s  Reboot\n%s  Power off\n' "$lock" "$logout" "$reboot" "$power"
     } | menu "system ❯ "
@@ -86,6 +88,7 @@ run() {
         sound)         exec ~/.config/waybar/panel.py sound ;;
         displays)      exec ~/.config/waybar/panel.py displays ;;
         bluetooth)     exec ~/.config/waybar/panel.py bluetooth ;;
+        wallpaper)     exec ~/.config/waybar/panel.py wallpaper ;;
         logo)          logo ;;
         lock|logout|reboot|poweroff) power "$1" ;;
         *) echo "menu.sh: unknown action $1" >&2; exit 1 ;;
@@ -105,6 +108,7 @@ case $(system) in
     *Sound)         run sound ;;
     *Displays)      run displays ;;
     *Bluetooth)     run bluetooth ;;
+    *Wallpaper)     run wallpaper ;;
     *"Bar logo")    run logo ;;
     *Lock)          run lock ;;
     *"Log out")     run logout ;;
