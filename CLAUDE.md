@@ -39,7 +39,10 @@ No player on this machine? `dev/fake-player.py` is a pretend one on MPRIS
 and the media popup control like a real one; panel-sizes uses it.
 No Bluetooth adapter? `dev/fake_bluetooth.py` stands in for
 `bluetooth.py` (paired and nearby devices, a failing one, a pairing code);
-panel-sizes puts it in place for the `bluetooth` page.
+panel-sizes puts it in place for the `bluetooth` page. Likewise
+`dev/fake_audio.py` stands in for `audio.py` on the `sound` page (many
+devices and apps, a mic with three gains), so tests never touch the
+user's real volumes or apps.
 
 `--shots DIR` also saves a screenshot after each step (look at them with
 the Read tool). It needs the user's live sway session (`$SWAYSOCK`); it

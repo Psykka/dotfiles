@@ -28,7 +28,7 @@ GAINS = os.path.join(os.environ.get("XDG_STATE_HOME", os.path.expanduser("~/.loc
                      "bar-audio-gains.json")
 # Gain a control stuck at 0 is raised to when nothing is saved for it
 DEFAULT_GAIN = 80
-
+TEST_SOUND = "/usr/share/sounds/freedesktop/stereo/audio-test-signal.oga"
 
 
 def run(*cmd):
@@ -55,6 +55,117 @@ def real_sources():
     """Microphones and line inputs, without the outputs' monitors."""
     return [s for s in pactl("sources") if s["properties"].get("device.class") != "monitor"
             and not s["name"].endswith(".monitor")]
+
+
+def icon(props, kind):
+    """The panel's glyph for a device (a key of panel.ICON)."""
+    words = " ".join(props.get(k, "") for k in ("device.form_factor", "device.icon_name", "device.bus",
+                                                  "device.profile.name")).lower()
+    for word, glyph in (("headset", "headphones"), ("headphone", "headphones"), ("hdmi", "display"),
+                        ("webcam", "camera"), ("bluetooth", "headphones")):
+        if word in words:
+            return glyph
+    return "volume" if kind == "sink" else "mic"
+
+
+def devices(kind):
+    """Outputs ("sink") or inputs ("source"), without the monitors:
+    [{name, title, port, icon, volume, mute, default, props}].
+
+    The full description is often huge ("ES1371/ES1373 / Creative Labs
+    CT2518 (...)"), so the title is the device's short nick and the port
+    its active one ("Analog Output", "Headphones")."""
+    default = run("pactl", f"get-default-{kind}")
+    out = []
+    for d in pactl(kind + "s"):
+        props = d.get("properties", {})
+        if d["name"].endswith(".monitor") or props.get("device.class") == "monitor":
+            continue
+        port = next((p.get("description", "") for p in d.get("ports", [])
+                     if p.get("name") == d.get("active_port")), "")
+        out.append({"name": d["name"], "index": d["index"],
+                    "title": props.get("device.nick") or props.get("alsa.card_name") or d.get("description")
+                    or d["name"],
+                    "port": port or props.get("device.profile.description", ""),
+                    "icon": icon(props, kind), "volume": percent(d["volume"]), "mute": d["mute"],
+                    "default": d["name"] == default, "props": props})
+    return out
+
+
+def set_default(kind, name):
+    run("pactl", f"set-default-{kind}", name)
+
+
+def set_volume(kind, name, value):
+    run("pactl", f"set-{kind}-volume", name, f"{int(value)}%")
+
+
+def set_mute(kind, name, on):
+    run("pactl", f"set-{kind}-mute", name, "1" if on else "0")
+
+
+def streams():
+    """Apps playing ("sink-input") and recording ("source-output"):
+    [{kind, index, app, volume, mute, device (index)}]."""
+    out = []
+    for kind, device in (("sink-input", "sink"), ("source-output", "source")):
+        for s in pactl(kind + "s"):
+            p = s["properties"]
+            if p.get("application.name") == CLIENT or "volume" not in s:
+                continue
+            app = p.get("application.name") or p.get("application.process.binary") or "?"
+            out.append({"kind": kind, "index": s["index"], "app": app[0].upper() + app[1:],
+                        "volume": percent(s["volume"]), "mute": s["mute"], "device": s[device]})
+    return out
+
+
+def set_stream_volume(kind, index, value):
+    run("pactl", f"set-{kind}-volume", str(index), f"{int(value)}%")
+
+
+def set_stream_mute(kind, index, on):
+    run("pactl", f"set-{kind}-mute", str(index), "1" if on else "0")
+
+
+def move(kind, index, device):
+    run("pactl", f"move-{kind}", str(index), device)
+
+
+def test_sound():
+    subprocess.Popen(["paplay", TEST_SOUND], start_new_session=True,
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def restart():
+    """Restarts the sound server and waits for the devices; blocks."""
+    subprocess.run(["systemctl", "--user", "restart", "wireplumber", "pipewire", "pipewire-pulse"])
+    time.sleep(2)  # devices show up again
+    restore_gains()
+
+
+def subscribe(on_change):
+    """Calls on_change (from another thread) whenever a device, an app or
+    a volume changes. Returns a function that stops it."""
+    state = {"proc": None, "stopped": False}
+
+    def listen():
+        # pactl exits when the sound server restarts; wait and resubscribe
+        while not state["stopped"]:
+            state["proc"] = p = subprocess.Popen(["pactl", "subscribe"], stdout=subprocess.PIPE,
+                                                 stderr=subprocess.DEVNULL, text=True)
+            for line in p.stdout:
+                if " client " not in line:
+                    on_change()
+            p.wait()
+            time.sleep(1)
+
+    def stop():
+        state["stopped"] = True
+        if state["proc"]:
+            state["proc"].kill()
+
+    threading.Thread(target=listen, daemon=True).start()
+    return stop
 
 
 def recording(sources=None):
@@ -89,6 +200,28 @@ def capture_controls(card):
             out.append({"name": m.group(1), "index": int(m.group(2)),
                         "percent": int(cur.group(1)), "on": "[off]" not in cur.group(2)})
     return out
+
+
+def gains(source):
+    """The hardware capture volumes of an input (a devices() item):
+    [{key, name, percent}]; none for devices without ALSA controls."""
+    card = source["props"].get("alsa.card") if source else None
+    if card is None:
+        return []
+    controls = capture_controls(card)
+    out = []
+    for c in controls:
+        twin = any(o is not c and o["name"] == c["name"] for o in controls)
+        out.append({"key": f"{c['name']},{c['index']}", "percent": c["percent"],
+                    "name": f"{c['name']} {c['index']}" if c["index"] or twin else c["name"]})
+    return out
+
+
+def tune_gain(source, key, value):
+    """Sets one of gains() and keeps it for when the device comes back."""
+    name, index = key.rsplit(",", 1)
+    set_gain(source["props"]["alsa.card"], name, index, value)
+    save_gain(device_key(source["props"]), key, int(value))
 
 
 def load_gains():

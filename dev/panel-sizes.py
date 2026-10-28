@@ -13,7 +13,8 @@ Usage: dev/panel-sizes.py [MODE ...]        all of them by default
 
 The popups really open, on the focused display. The media one plays the
 pretend player (dev/fake-player.py) and leaves any real one alone; the
-Bluetooth one has pretend devices (dev/fake_bluetooth.py). The
+Bluetooth one has pretend devices (dev/fake_bluetooth.py) and the sound
+one a pretend sound server (dev/fake_audio.py). The
 wallpaper one tries a wallpaper already downloaded on the desktop, then
 discards it: nothing is saved. Not a stow package: nothing here is linked
 into ~.
@@ -113,6 +114,34 @@ def steps(mode):
             (800, "turn on", lambda m: m.bluetooth.switch.set_active(True), False),
             (1000, "end", lambda _: None, False),
         ]
+    if mode == "sound":
+        # With the pretend sound server (fake_audio.py), set up in run()
+        import fake_audio as fake
+
+        def app(s, name):
+            return next(r for r in s.apps_rows.values() if r.stream["app"] == name)
+        return [
+            (0, "pick an output", lambda m: m.sound.pick("sink"), False),
+            (800, "use the headphones", lambda m: m.sound.use("bt"), False),
+            (800, "pick an input", lambda m: m.sound.pick("source"), False),
+            (800, "a mic with three gains", lambda m: m.sound.use("yeti"), False),
+            (1000, "drag a gain", lambda m: m.sound.gain_rows[0].moved(55), False),
+            (500, "move Firefox here", lambda m: app(m.sound, "Firefox").bring(), False),
+            (500, "mute an app", lambda m: app(m.sound, "Spotify").toggle_mute(), False),
+            (500, "turn an app down", lambda m: app(m.sound, "Spotify").volume.moved(20), False),
+            (500, "a device plugged", lambda _: fake.plug(), False),
+            (500, "pick among four", lambda m: m.sound.pick("sink"), False),
+            (800, "back", lambda m: m.sound.show("main"), False),
+            (800, "and unplugged", lambda _: fake.unplug(), False),
+            (500, "an app starts", lambda _: fake.start("Telegram"), False),
+            (500, "and another", lambda _: fake.start("OBS", "source-output"), False),
+            (500, "both stop", lambda _: fake.stop("Telegram") or fake.stop("OBS"), False),
+            (500, "mute the mic", lambda m: m.sound.input.toggle_mute(), False),
+            (800, "fix", lambda m: m.sound.fix(), False),
+            (1500, "OK", lambda m: m.sound.fixes.set_visible_child_name("buttons"), False),
+            (500, "restart audio", lambda m: m.sound.restart(), False),
+            (2000, "end", lambda _: None, False),
+        ]
     if mode == "calendar":
         return [
             (0, "next month", lambda c: c.month.move(1), False),
@@ -140,7 +169,7 @@ def stop_fake_player():
         fake.pop().terminate()
 
 
-MODES = ("wallpaper", "menu", "bluetooth", "calendar", "media")
+MODES = ("wallpaper", "menu", "sound", "bluetooth", "calendar", "media")
 
 
 def run(mode, shots):
@@ -156,6 +185,10 @@ def run(mode, shots):
         import fake_bluetooth
         panel.bluetooth = fake_bluetooth
         panel.HAS_BLUETOOTH = True
+    if mode in ("sound", "menu"):
+        sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+        import fake_audio
+        panel.audio = fake_audio
     plan = steps(mode)
     if plan is None:
         print(f"{mode}: skipped (nothing to try it with)")
