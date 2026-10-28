@@ -101,6 +101,7 @@ button.back:hover .heading { color: @hi; }
 .small { font-size: 11px; }
 button.ctl { min-width: 40px; min-height: 32px; padding: 0; font-size: 14px; }
 button.ctl.main { min-width: 48px; font-size: 18px; }
+button.ctl:disabled label { color: @faint; }
 scale { padding: 0; margin: 0; }
 levelbar trough { background: @line; border: none; border-radius: 3px; min-height: 6px; padding: 0; }
 levelbar block { border: none; border-radius: 3px; min-height: 6px; }
@@ -139,6 +140,13 @@ scale slider {
     min-height: 12px;
     margin: -4px;
 }
+/* Thin, in the volume pills' colors: accent, grey when muted */
+scale.thin highlight { background: @accent; }
+scale.thin.off highlight { background: @off; }
+scale.thin.off slider { background: @off; }
+button.vol-icon { padding: 0; min-width: 18px; color: @mute; font-size: 11px; }
+button.vol-icon:hover { background: transparent; color: @hi; }
+scale:disabled slider, scale:disabled highlight { background: transparent; }
 
 
 .notif { background: @bg2; border-radius: 4px; padding: 8px 10px; }
@@ -302,93 +310,208 @@ def fmt_time(sec):
 
 # ---------------------------------------------------------------- media
 
+# The player the popup shows and controls (dev/panel-sizes.py points it at
+# its pretend player, so a real one is never touched)
+PLAYERCTL = ["playerctl"]
+
+class Cover(Gtk.DrawingArea):
+    """The album art in a rounded square; a music note while there is none."""
+
+    SIZE = 96
+
+    def __init__(self):
+        super().__init__()
+        self.set_size_request(self.SIZE, self.SIZE)
+        self.set_valign(Gtk.Align.START)
+        self.pix = None
+        self.connect("draw", self.draw)
+
+    def load(self, path):
+        scale = self.get_scale_factor()
+        try:
+            self.pix = cover(GdkPixbuf.Pixbuf.new_from_file(path), self.SIZE * scale, self.SIZE * scale)
+        except (GLib.Error, TypeError):
+            self.pix = None
+        self.queue_draw()
+
+    def draw(self, _w, cr):
+        n = self.SIZE
+        rounded(cr, 0, 0, n, n, 6)
+        cr.clip()
+        if self.pix:
+            k = 1 / self.get_scale_factor()
+            cr.scale(k, k)
+            Gdk.cairo_set_source_pixbuf(cr, self.pix, 0, 0)
+            cr.paint()
+            return False
+        ctx = self.get_style_context()
+        for name in ("bg2", "mute"):
+            found, c = ctx.lookup_color(name)
+            cr.set_source_rgb(*((c.red, c.green, c.blue) if found else (0.5, 0.5, 0.5)))
+            if name == "bg2":
+                cr.paint()
+        layout = self.create_pango_layout(ICON["music"])
+        layout.set_font_description(Pango.FontDescription("Font Awesome 6 Free Heavy 22px"))
+        w, h = layout.get_pixel_size()
+        cr.move_to((n - w) / 2, (n - h) / 2)
+        PangoCairo.show_layout(cr, layout)
+        return False
+
+
 class Media(Gtk.Box):
+    """Art on the left; title, artist and the buttons beside it; the
+    progress with both times in one line below. Every part keeps its room
+    whatever plays (long titles, no art, a stream, nothing at all).
+
+    The volume is a button like the others (scrolling on it changes it);
+    clicked, the progress line turns into the volume for a while."""
+
+    VOLUME_MS = 3000  # back to the progress after this long untouched
+
     FIELDS = ["status", "xesam:title", "xesam:artist", "mpris:artUrl",
               "mpris:length", "position", "volume", "playerName"]
 
     def __init__(self):
-        super().__init__(spacing=28)
+        super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=12)
         self.art_url = None
-        main = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
-        main.set_size_request(320, -1)
-        self.pack_start(main, True, True, 0)
 
         top = Gtk.Box(spacing=14)
-        self.art = Gtk.Image()
-        self.art_box = Gtk.EventBox()
-        self.art_placeholder = label(ICON["music"], ["icon", "art"], xalign=0.5)
-        self.art_placeholder.set_size_request(64, 64)
-        self.art_box.add(self.art_placeholder)
-        top.pack_start(self.art_box, False, False, 0)
-        info = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
-        info.set_valign(Gtk.Align.CENTER)
-        self.title = label(css=["title"], ellipsize=True, width=26)
-        self.artist = label(ellipsize=True, width=26)
-        self.player = label(css=["muted"], ellipsize=True, width=26)
+        self.cover = Cover()
+        top.pack_start(self.cover, False, False, 0)
+        side = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+        self.title = label(css=["title"], ellipsize=True, width=27)
+        self.artist = label(ellipsize=True, width=27)
+        self.player = label(css=["muted", "small"], ellipsize=True, width=27)
         for w in (self.title, self.artist, self.player):
-            info.pack_start(w, False, False, 0)
-        top.pack_start(info, True, True, 0)
-        main.pack_start(top, False, False, 0)
+            side.pack_start(w, False, False, 0)
 
-        self.seek = hslider(0, 1, lambda v: run("playerctl", "position", str(int(v))))
-        times = Gtk.Box()
-        self.pos = label(css=["muted"])
-        self.length = label(css=["muted"], xalign=1.0)
-        times.pack_start(self.pos, True, True, 0)
-        times.pack_start(self.length, True, True, 0)
-        main.pack_start(self.seek, False, False, 0)
-        main.pack_start(times, False, False, 0)
+        controls = Gtk.Box(spacing=2, valign=Gtk.Align.END, halign=Gtk.Align.CENTER)
+        self.buttons = [icon_button("prev", css=["ctl"], on_click=lambda: run(*PLAYERCTL, "previous")),
+                        icon_button("play", css=["ctl", "main"], on_click=lambda: run(*PLAYERCTL, "play-pause")),
+                        icon_button("next", css=["ctl"], on_click=lambda: run(*PLAYERCTL, "next"))]
+        self.play = self.buttons[1]
+        for b in self.buttons:
+            controls.pack_start(b, False, False, 0)
+        # Players that have no volume (Firefox...) leave its room empty
+        self.unmuted = 1.0  # back to this when unmuting
+        self.back_timer = None
+        self.volume = icon_button("volume", css=["ctl"], on_click=lambda: self.show_volume(
+            self.lines.get_visible_child_name() != "volume"))
+        self.volume.add_events(Gdk.EventMask.SCROLL_MASK | Gdk.EventMask.SMOOTH_SCROLL_MASK)
+        self.volume.connect("scroll-event", self.scrolled)
+        controls.pack_start(self.volume, False, False, 0)
+        side.pack_end(controls, True, True, 0)
+        top.pack_start(side, True, True, 0)
+        self.pack_start(top, False, False, 0)
 
-        controls = Gtk.Box(spacing=8, halign=Gtk.Align.CENTER)
-        controls.pack_start(icon_button("prev", css=["ctl"], on_click=lambda: run("playerctl", "previous")), False, False, 0)
-        self.play = icon_button("play", css=["ctl", "main"], on_click=lambda: run("playerctl", "play-pause"))
-        controls.pack_start(self.play, False, False, 0)
-        controls.pack_start(icon_button("next", css=["ctl"], on_click=lambda: run("playerctl", "next")), False, False, 0)
-        main.pack_start(controls, False, False, 0)
-
-        self.vol = Pill("volume", lambda v: run("playerctl", "volume", f"{v / 100:.2f}"), vertical=True)
-        self.pack_start(self.vol, False, False, 0)
+        # Both lines in one stack: swapping them changes no size, and the
+        # sliders line up (same room on each side)
+        self.lines = Gtk.Stack(homogeneous=True, transition_type=Gtk.StackTransitionType.CROSSFADE,
+                               transition_duration=150)
+        left, right = Gtk.SizeGroup(mode=Gtk.SizeGroupMode.HORIZONTAL), Gtk.SizeGroup(mode=Gtk.SizeGroupMode.HORIZONTAL)
+        progress = Gtk.Box(spacing=10)
+        self.pos = label(css=["muted", "small"], width=5, ellipsize=True)
+        self.seek = css(hslider(0, 1, lambda v: run(*PLAYERCTL, "position", str(int(v)))), "thin")
+        self.length = label(css=["muted", "small"], xalign=1.0, width=5, ellipsize=True)
+        progress.pack_start(self.pos, False, False, 0)
+        progress.pack_start(self.seek, True, True, 0)
+        progress.pack_start(self.length, False, False, 0)
+        volume = Gtk.Box(spacing=10)
+        self.mute = icon_button("volume", css=["vol-icon"], on_click=self.toggle_mute)
+        self.mute.set_halign(Gtk.Align.START)
+        self.vol = css(hslider(0, 100, lambda v: self.set_volume(v / 100)), "thin")
+        self.percent = label(css=["muted", "small"], xalign=1.0, width=5)
+        volume.pack_start(self.mute, False, False, 0)
+        volume.pack_start(self.vol, True, True, 0)
+        volume.pack_start(self.percent, False, False, 0)
+        left.add_widget(self.pos)
+        left.add_widget(self.mute)
+        right.add_widget(self.length)
+        right.add_widget(self.percent)
+        self.lines.add_named(progress, "progress")
+        self.lines.add_named(volume, "volume")
+        self.pack_start(self.lines, False, False, 0)
 
         self.refresh()
         GLib.timeout_add_seconds(1, self.refresh)
 
     def refresh(self):
         fmt = "\x1f".join("{{%s}}" % f for f in self.FIELDS)
-        out = run("playerctl", "metadata", "--format", fmt)
-        if not out:
-            self.title.set_text("Nothing playing")
-            self.artist.set_text("")
-            self.player.set_text("")
-            self.pos.set_text("")
-            self.length.set_text("")
-            self.set_art(None)
-            return True
+        out = run(*PLAYERCTL, "metadata", "--format", fmt)
         status, title, artist, art, length, pos, vol, player = (out.split("\x1f") + [""] * 8)[:8]
-        self.title.set_text(title or "Unknown")
+        for b in self.buttons:
+            b.set_sensitive(bool(out))
+        self.title.set_text(title or ("Unknown" if out else "Nothing playing"))
         self.artist.set_text(artist)
         self.player.set_text(player.capitalize())
         length_s = int(length or 0) / 1e6
         pos_s = int(pos or 0) / 1e6
         if length_s:
             pos_s = min(pos_s, length_s)
+        # A stream has no length: nothing to seek in
+        self.seek.set_sensitive(bool(length_s))
         self.seek.set_range(0, max(length_s, 1))
-        self.seek.set_value(pos_s)
-        self.pos.set_text(fmt_time(pos_s))
-        self.length.set_text(fmt_time(length_s) if length_s else "")
-        self.vol.set(float(vol or 0) * 100)
+        self.seek.set_value(pos_s if length_s else 0)
+        self.pos.set_text(fmt_time(pos_s) if out else "")
+        self.length.set_text(fmt_time(length_s) if length_s else ("live" if out else ""))
+        self.volume.set_opacity(1 if vol else 0)
+        self.volume.set_sensitive(bool(vol))
+        if not vol:
+            self.show_volume(False)
+        else:
+            level = float(vol)
+            icon = ICON["volume" if level > 0 else "muted"]
+            for b in (self.volume, self.mute):
+                b.get_child().get_children()[0].set_text(icon)
+            self.vol.set_value(level * 100)
+            self.percent.set_text(f"{round(level * 100)}%")
+            css(self.vol, "off", on=level == 0)
         self.play.get_child().get_children()[0].set_text(
             ICON["pause"] if status == "Playing" else ICON["play"])
         self.set_art(art or None)
         return True
+
+    def show_volume(self, on):
+        if self.back_timer:
+            GLib.source_remove(self.back_timer)
+            self.back_timer = None
+        self.lines.set_visible_child_name("volume" if on else "progress")
+        if on:
+            self.back_timer = GLib.timeout_add(self.VOLUME_MS, lambda: self.show_volume(False))
+        return False
+
+    def scrolled(self, _w, event):
+        ok, _dx, dy = event.get_scroll_deltas()
+        if not ok:
+            dy = {Gdk.ScrollDirection.UP: -1, Gdk.ScrollDirection.DOWN: 1}.get(event.get_scroll_direction()[1], 0)
+        if dy:
+            self.set_volume(max(0.0, min(1.0, self.vol.get_value() / 100 - dy * 0.05)))
+            self.refresh()
+        return True
+
+    def set_volume(self, level):
+        if level > 0:
+            self.unmuted = level
+        run(*PLAYERCTL, "volume", f"{level:.2f}")
+        # Still being moved: stays on screen
+        if self.lines.get_visible_child_name() == "volume":
+            self.show_volume(True)
+
+    def toggle_mute(self):
+        level = self.vol.get_value() / 100
+        if level > 0:
+            self.unmuted = level
+        self.set_volume(0 if level > 0 else self.unmuted)
+        self.refresh()
 
     def set_art(self, url):
         if url == self.art_url:
             return
         self.art_url = url
         if not url:
-            self.show_art(None)
+            self.cover.load(None)
         elif url.startswith("file://"):
-            self.show_art(urllib.parse.unquote(url[7:]))
+            self.cover.load(urllib.parse.unquote(url[7:]))
         elif url.startswith("http"):
             threading.Thread(target=self.fetch_art, args=(url,), daemon=True).start()
 
@@ -400,21 +523,7 @@ class Media(Gtk.Box):
                     f.write(r.read())
         except OSError:
             path = None
-        GLib.idle_add(self.show_art, path)
-
-    def show_art(self, path):
-        child = self.art_box.get_child()
-        try:
-            pix = GdkPixbuf.Pixbuf.new_from_file_at_scale(path, 64, 64, True)
-            self.art.set_from_pixbuf(pix)
-            new = self.art
-        except (GLib.Error, TypeError):
-            new = self.art_placeholder
-        if child is not new:
-            self.art_box.remove(child)
-            self.art_box.add(new)
-            new.show()
-        return False
+        GLib.idle_add(lambda: self.art_url == url and self.cover.load(path))
 
 
 # ------------------------------------------------- calendar + notifications

@@ -11,9 +11,11 @@ the swap to the wallpaper preview...) is a failure: exit status 1.
 Usage: dev/panel-sizes.py [MODE ...]        all of them by default
        dev/panel-sizes.py --shots DIR MODE  and a screenshot after each step
 
-The popups really open, on the focused display. The wallpaper one tries a
-wallpaper already downloaded on the desktop, then discards it: nothing is
-saved. Not a stow package: nothing here is linked into ~.
+The popups really open, on the focused display. The media one plays the
+pretend player (dev/fake-player.py) and leaves any real one alone. The
+wallpaper one tries a wallpaper already downloaded on the desktop, then
+discards it: nothing is saved. Not a stow package: nothing here is linked
+into ~.
 """
 import os
 import pathlib
@@ -73,9 +75,41 @@ def steps(mode):
             (1000, "back", lambda m: m.show_page("main"), True),
             (1000, "end", lambda m: None, False),
         ]
-    if mode in ("calendar", "media"):
+    if mode == "media":
+        # The pretend player (fake-player.py) goes through its tracks: art,
+        # a title far too long, no art, a stream; then it quits
+        def player(*args):
+            subprocess.run(["playerctl", "-p", "fakeplayer", *args], capture_output=True)
+        return [
+            (0, "a player starts", lambda _: start_fake_player(), False),
+            (1500, "long title", lambda _: player("next"), False),
+            (1500, "no art", lambda _: player("next"), False),
+            (1500, "stream", lambda _: player("next"), False),
+            (1500, "pause", lambda _: player("pause"), False),
+            (1500, "volume line", lambda m: m.show_volume(True), False),
+            (800, "mute", lambda m: m.toggle_mute(), False),
+            (1200, "unmute", lambda m: m.toggle_mute(), False),
+            (4000, "back to progress", lambda _: None, False),
+            (1500, "player quits", lambda _: stop_fake_player(), False),
+            (2000, "end", lambda _: None, False),
+        ]
+    if mode == "calendar":
         return [(2000, "end", lambda _: None, False)]
     return None
+
+
+FAKE_PLAYER = pathlib.Path(__file__).resolve().parent / "fake-player.py"
+fake = []
+
+
+def start_fake_player():
+    # Quits by itself too, should this script die before stopping it
+    fake.append(subprocess.Popen([sys.executable, str(FAKE_PLAYER), "60"], stderr=subprocess.DEVNULL))
+
+
+def stop_fake_player():
+    while fake:
+        fake.pop().terminate()
 
 
 MODES = ("wallpaper", "menu", "calendar", "media")
@@ -88,6 +122,7 @@ def run(mode, shots):
     import panel
     from gi.repository import GLib, Gtk
 
+    panel.PLAYERCTL = ["playerctl", "-p", "fakeplayer"]
     plan = steps(mode)
     if plan is None:
         print(f"{mode}: skipped (nothing to try it with)")
@@ -129,7 +164,11 @@ def run(mode, shots):
         t += wait
         GLib.timeout_add(t, lambda n=name, a=action, ok=allowed: do(n, a, ok))
     GLib.timeout_add(t + 300, lambda: Gtk.main_quit() or False)
-    panel.main()
+    try:
+        panel.main()
+    finally:
+        stop_fake_player()
+
     def wh(size):
         return f"{size[0]}x{size[1]}"
     for step, (before, after, frames, allowed) in changes.items():

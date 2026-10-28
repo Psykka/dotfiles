@@ -34,6 +34,10 @@ It opens each popup on the running sway, goes through its steps and fails
 on any size change that is not a deliberate animation. When adding a
 popup, a tab or a new state, add its steps to `steps()` in that script.
 
+No player on this machine? `dev/fake-player.py` is a pretend one on MPRIS
+(tracks with and without art, a very long title, a stream) that playerctl
+and the media popup control like a real one; panel-sizes uses it.
+
 `--shots DIR` also saves a screenshot after each step (look at them with
 the Read tool). It needs the user's live sway session (`$SWAYSOCK`); it
 tries a wallpaper but saves nothing.
