@@ -55,6 +55,13 @@ bindsym $mod+Shift+4 exec ~/.config/sway/workspaces.py move 4
 bindsym $mod+Shift+5 exec ~/.config/sway/workspaces.py move 5
 bindsym $mod+Shift+6 exec ~/.config/sway/workspaces.py move 6
 
+# Send the window to the display on that side, onto the workspace it is
+# showing, and follow it
+bindsym $mod+Shift+Left move container to output left; focus output left
+bindsym $mod+Shift+Right move container to output right; focus output right
+bindsym $mod+Shift+Up move container to output up; focus output up
+bindsym $mod+Shift+Down move container to output down; focus output down
+
 # Workspaces: Super + scroll goes to the previous / next one of the display;
 # past the last, it opens a new workspace
 bindsym --whole-window $mod+button4 exec ~/.config/sway/workspaces.py prev
