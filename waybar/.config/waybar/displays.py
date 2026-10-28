@@ -5,7 +5,8 @@ resolution and scale of each one, and their order side by side.
 Usage: displays.py save  writes the current layout (also after changing it
                          in wdisplays), so it comes back at the next login
 
-The main display holds workspace 1 and has the focus at login. Settings are
+The main display holds workspaces 1..6 and has the focus at login; the
+others have their own (~/.config/sway/workspaces.py). Settings are
 kept per monitor (make, model and serial, so a monitor keeps them on any
 port) in a file sway includes; a monitor that is not plugged in keeps its
 line for the next time it is.
@@ -93,22 +94,18 @@ def primary(items=None):
     return next((o["id"] for o in items if o["name"] == holder), items[0]["id"] if items else None)
 
 
+def arrange_workspaces():
+    """Each display's workspaces follow it (~/.config/sway/workspaces.py):
+    the main one holds 1..6, the others theirs, left to right."""
+    run(os.path.expanduser("~/.config/sway/workspaces.py"), "arrange")
+
+
 def set_primary(ident):
-    items = outputs()
-    target = next((o for o in items if o["id"] == ident), None)
-    if not target:
+    if not any(o["id"] == ident for o in outputs()):
         return
     sway(f"workspace 1 output {quote(ident)}")
-    try:
-        ws = json.loads(run("swaymsg", "-t", "get_workspaces") or "[]")
-    except json.JSONDecodeError:
-        ws = []
-    one = next((w for w in ws if w["name"] == "1"), None)
-    if one and one["output"] != target["name"]:
-        back = next((w["name"] for w in ws if w["focused"]), "1")
-        sway(f"workspace number 1; move workspace to output {quote(target['name'])}; "
-             f"workspace {quote(back)}")
     save(ident)
+    arrange_workspaces()
 
 
 # ------------------------------------------------------ resolution, scale
@@ -159,6 +156,7 @@ def move(ident, step):
         sway(f"output {quote(o['id'])} pos {x} {o['rect']['y']}")
         x += o["rect"]["width"]
     save()
+    arrange_workspaces()
 
 
 # -------------------------------------------------------------------- save

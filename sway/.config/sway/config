@@ -40,29 +40,30 @@ bindsym $mod+Shift+q kill
 bindsym $mod+f floating toggle
 floating_modifier $mod normal
 
-# Workspaces: go to / move window
-bindsym $mod+1 workspace number 1
-bindsym $mod+2 workspace number 2
-bindsym $mod+3 workspace number 3
-bindsym $mod+4 workspace number 4
-bindsym $mod+5 workspace number 5
-bindsym $mod+6 workspace number 6
-bindsym $mod+Shift+1 move container to workspace number 1
-bindsym $mod+Shift+2 move container to workspace number 2
-bindsym $mod+Shift+3 move container to workspace number 3
-bindsym $mod+Shift+4 move container to workspace number 4
-bindsym $mod+Shift+5 move container to workspace number 5
-bindsym $mod+Shift+6 move container to workspace number 6
+# Workspaces: go to / move window. Each display has its own 1..6
+# (workspaces.py); with a single display they are just 1..6
+bindsym $mod+1 exec ~/.config/sway/workspaces.py go 1
+bindsym $mod+2 exec ~/.config/sway/workspaces.py go 2
+bindsym $mod+3 exec ~/.config/sway/workspaces.py go 3
+bindsym $mod+4 exec ~/.config/sway/workspaces.py go 4
+bindsym $mod+5 exec ~/.config/sway/workspaces.py go 5
+bindsym $mod+6 exec ~/.config/sway/workspaces.py go 6
+bindsym $mod+Shift+1 exec ~/.config/sway/workspaces.py move 1
+bindsym $mod+Shift+2 exec ~/.config/sway/workspaces.py move 2
+bindsym $mod+Shift+3 exec ~/.config/sway/workspaces.py move 3
+bindsym $mod+Shift+4 exec ~/.config/sway/workspaces.py move 4
+bindsym $mod+Shift+5 exec ~/.config/sway/workspaces.py move 5
+bindsym $mod+Shift+6 exec ~/.config/sway/workspaces.py move 6
 
-# Workspaces: Super + scroll goes to the previous / next one; past the
-# last, it opens a new workspace
-bindsym --whole-window $mod+button4 exec ~/.config/sway/workspace-scroll.py prev
-bindsym --whole-window $mod+button5 exec ~/.config/sway/workspace-scroll.py next
+# Workspaces: Super + scroll goes to the previous / next one of the display;
+# past the last, it opens a new workspace
+bindsym --whole-window $mod+button4 exec ~/.config/sway/workspaces.py prev
+bindsym --whole-window $mod+button5 exec ~/.config/sway/workspaces.py next
 
 # Laptops: three-finger swipe to the side changes workspace, like macOS
 # (left = next, right = previous); does nothing without a touchpad
-bindgesture swipe:3:left exec ~/.config/sway/workspace-scroll.py next
-bindgesture swipe:3:right exec ~/.config/sway/workspace-scroll.py prev
+bindgesture swipe:3:left exec ~/.config/sway/workspaces.py next
+bindgesture swipe:3:right exec ~/.config/sway/workspaces.py prev
 
 # Reload config
 bindsym $mod+Shift+r reload
@@ -124,6 +125,10 @@ include ~/.local/state/sway-displays.conf
 # Display profiles (~/.config/kanshi/config); does nothing without one, and
 # overrides the Displays page when there is one
 exec kanshi
+
+# Workspaces per display: puts each display's workspaces back on it when
+# displays are plugged in, unplugged or reordered
+exec ~/.config/sway/workspaces.py watch
 
 # Gorilla-like tiling: new windows halve the focused one, in a spiral
 exec ~/.config/sway/autotiling.py

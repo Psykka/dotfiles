@@ -22,11 +22,11 @@ sel=$(awk '
         if (cmd ~ /(^| )lock$/)                       return "Lock screen"
         if (cmd == "kill")                            return "Close window"
         if (cmd == "floating toggle")                 return "Toggle floating"
-        if (cmd ~ /workspace-scroll\.py prev$/)      return "Previous workspace"
-        if (cmd ~ /workspace-scroll\.py next$/)      return "Next workspace (or a new one)"
+        if (cmd ~ /workspaces\.py prev$/)           return "Previous workspace"
+        if (cmd ~ /workspaces\.py next$/)           return "Next workspace (or a new one)"
         if (cmd == "reload")                          return "Reload config"
-        if (cmd ~ /^workspace number $/)              return "Go to workspace"
-        if (cmd ~ /^move container to workspace number $/) return "Move window to workspace"
+        if (cmd ~ /workspaces\.py go $/)            return "Go to workspace"
+        if (cmd ~ /workspaces\.py move $/)          return "Move window to workspace"
         return sec != "" ? sec : cmd
     }
 
