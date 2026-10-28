@@ -3266,19 +3266,25 @@ def transparent(window):
 
 
 class Backdrop(Gtk.Window):
-    def __init__(self):
+    """Takes the clicks outside the panel, one on each display; the one the
+    pointer enters says which display the panel opens on."""
+
+    def __init__(self, monitor):
         super().__init__()
         GtkLayerShell.init_for_window(self)
         GtkLayerShell.set_namespace(self, "bar-panel-backdrop")
+        GtkLayerShell.set_monitor(self, monitor)
         GtkLayerShell.set_layer(self, GtkLayerShell.Layer.OVERLAY)
         GtkLayerShell.set_exclusive_zone(self, -1)
         for edge in (GtkLayerShell.Edge.TOP, GtkLayerShell.Edge.BOTTOM,
                      GtkLayerShell.Edge.LEFT, GtkLayerShell.Edge.RIGHT):
             GtkLayerShell.set_anchor(self, edge, True)
         transparent(self)
-        self.add_events(Gdk.EventMask.BUTTON_PRESS_MASK)
+        self.add_events(Gdk.EventMask.BUTTON_PRESS_MASK | Gdk.EventMask.ENTER_NOTIFY_MASK)
         self.on_click = Gtk.main_quit
+        self.on_enter = lambda _monitor: None
         self.connect("button-press-event", lambda *_: self.on_click())
+        self.connect("enter-notify-event", lambda *_: self.on_enter(monitor))
 
 
 SLIDE_MS = 220
@@ -3302,7 +3308,8 @@ class Panel(Gtk.Window):
 
         transparent(self)
 
-        frame = Gtk.Box()
+        self.mode = mode
+        self.frame = frame = Gtk.Box()
         frame.get_style_context().add_class("panel")
         self.content = (Menu(mode) if mode in ("sound", "displays", "bluetooth") else
                         {"media": Media, "calendar": Calendar, "menu": Menu, "network": Network, "updates": Updates,
@@ -3325,16 +3332,22 @@ class Panel(Gtk.Window):
         width = room.get_preferred_width()[0]
         self.set_size_request(width, room.get_preferred_height_for_width(width)[1])
 
-        if mode == "media":
-            frame.show_all()
-            screen = Gdk.Display.get_default().get_monitor(0).get_geometry().width
-            center = (WORKSPACES_WIDTH + screen / 2 - CLOCK_WIDTH / 2) / 2
-            width = frame.get_preferred_width()[1]
-            GtkLayerShell.set_anchor(self, GtkLayerShell.Edge.LEFT, True)
-            GtkLayerShell.set_margin(self, GtkLayerShell.Edge.LEFT, max(6, int(center - width / 2)) - SHADOW)
-
         self.connect("key-press-event", lambda _w, e: e.keyval == 0xff1b and self.close())
         self.connect("destroy", Gtk.main_quit)
+
+    def place(self, monitor):
+        """Puts the panel on the display it was opened from (None: the
+        focused one, the compositor's pick)."""
+        if monitor:
+            GtkLayerShell.set_monitor(self, monitor)
+        if self.mode == "media":
+            self.frame.show_all()
+            monitor = monitor or Gdk.Display.get_default().get_monitor(0)
+            screen = monitor.get_geometry().width
+            center = (WORKSPACES_WIDTH + screen / 2 - CLOCK_WIDTH / 2) / 2
+            width = self.frame.get_preferred_width()[1]
+            GtkLayerShell.set_anchor(self, GtkLayerShell.Edge.LEFT, True)
+            GtkLayerShell.set_margin(self, GtkLayerShell.Edge.LEFT, max(6, int(center - width / 2)) - SHADOW)
 
     def open_up(self):
         self.revealer.set_reveal_child(True)
@@ -3402,14 +3415,37 @@ def main():
     Gtk.StyleContext.add_provider_for_screen(
         Gtk.Window().get_screen(), STYLE, Gtk.STYLE_PROVIDER_PRIORITY_USER + 1)
 
-    backdrop = Backdrop()
-    backdrop.show_all()
     panel = Panel(mode)
-    backdrop.on_click = panel.click_outside
     # Closed by the bar (same button again): slide up first
     GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGTERM, lambda: panel.close(force=True) and False)
-    panel.show_all()
-    GLib.timeout_add(30, panel.open_up)
+
+    def show(monitor):
+        if not panel.get_visible():
+            panel.place(monitor)
+            panel.show_all()
+            GLib.timeout_add(30, panel.open_up)
+
+    display = Gdk.Display.get_default()
+    for i in range(display.get_n_monitors()):
+        backdrop = Backdrop(display.get_monitor(i))
+        backdrop.on_click = panel.click_outside
+        backdrop.on_enter = show
+        backdrop.show_all()
+
+    # Opens on the display that was clicked, not the focused one. The
+    # pointer only enters a backdrop when it moves, so it gets moved by
+    # nothing until it does; no answer, the focused display it is
+    started = time.monotonic()
+
+    def nudge():
+        if panel.get_visible():
+            return False
+        if time.monotonic() - started > 0.3:
+            show(None)
+            return False
+        run("swaymsg", "seat - cursor move 0 0")
+        return True
+    GLib.timeout_add(20, nudge)
     Gtk.main()
 
     # Clear the pidfile only if it is still ours
