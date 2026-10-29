@@ -2781,40 +2781,29 @@ class Spinner(Gtk.DrawingArea):
         return False
 
 
-class TinyMock(Gtk.DrawingArea):
+def tiny_mock(cr, colors, W, H):
     """The Colors page's desktop mock, drawn small over a saved theme's
     picture: the bar's islands hanging from the top and one window with the
     focused border, so most of the picture still shows."""
+    def fill(key, x, y, w, h, r=2):
+        cr.set_source_rgb(*wallpaper.rgb(colors[key]))
+        rounded(cr, x, y, w, h, min(r, w / 2, h / 2))
+        cr.fill()
 
-    def __init__(self, colors):
-        super().__init__()
-        self.colors = colors
-        self.connect("draw", self.draw)
-
-    def draw(self, _w, cr):
-        W = self.get_allocated_width()
-        H = self.get_allocated_height()
-
-        def fill(key, x, y, w, h, r=2):
-            cr.set_source_rgb(*wallpaper.rgb(self.colors[key]))
-            rounded(cr, x, y, w, h, min(r, w / 2, h / 2))
-            cr.fill()
-
-        # Islands
-        fill("island", 3, -3, 22, 9)
-        for i, key in enumerate(("hi", "mute", "mute")):
-            fill(key, 7 + i * 5, 2, 2, 2, 1)
-        fill("island", W / 2 - 16, -3, 32, 9)
-        fill("fg", W / 2 - 9, 2, 18, 1.5, 1)
-        fill("island", W - 27, -3, 24, 9)
-        fill("mute", W - 22, 2, 14, 1.5, 1)
-        # A window with the focused border, in the bottom left corner
-        x, y, w, h = 6, H - 32, 46, 26
-        fill("accent", x, y, w, h, 3)
-        fill("bg0", x + 1.5, y + 1.5, w - 3, h - 3, 2)
-        for i, (key, lw) in enumerate((("hi", 18), ("fg", 32), ("sub", 26), ("mute", 14))):
-            fill(key, x + 5, y + 5 + i * 4.5, lw, 1.5, 1)
-        return False
+    # Islands
+    fill("island", 3, -3, 22, 9)
+    for i, key in enumerate(("hi", "mute", "mute")):
+        fill(key, 7 + i * 5, 2, 2, 2, 1)
+    fill("island", W / 2 - 16, -3, 32, 9)
+    fill("fg", W / 2 - 9, 2, 18, 1.5, 1)
+    fill("island", W - 27, -3, 24, 9)
+    fill("mute", W - 22, 2, 14, 1.5, 1)
+    # A window with the focused border, in the bottom left corner
+    x, y, w, h = 6, H - 32, 46, 26
+    fill("accent", x, y, w, h, 3)
+    fill("bg0", x + 1.5, y + 1.5, w - 3, h - 3, 2)
+    for i, (key, lw) in enumerate((("hi", 18), ("fg", 32), ("sub", 26), ("mute", 14))):
+        fill(key, x + 5, y + 5 + i * 4.5, lw, 1.5, 1)
 
 
 class Thumb(Gtk.Button):
@@ -2831,9 +2820,10 @@ class Thumb(Gtk.Button):
         self.image.set_size_request(THUMB_W, THUMB_H)
         overlay.add(self.image)
         if colors:
-            mock = TinyMock(colors)
-            overlay.add_overlay(mock)
-            overlay.set_overlay_pass_through(mock, True)
+            # Painted on the picture itself: a widget of its own on top
+            # would have a window that takes the clicks from the button
+            self.image.connect_after("draw", lambda w, cr: tiny_mock(
+                cr, colors, w.get_allocated_width(), w.get_allocated_height()))
         if current:
             mark = label(ICON["check"], ["icon", "mark"], xalign=0.5)
             mark.set_halign(Gtk.Align.END)
