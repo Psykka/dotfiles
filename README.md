@@ -105,6 +105,13 @@ machine's choice: they go to `~/.local/state/theme-local.ini`, on top of
 the palette, not into the repo. The files `theme` writes are not in git
 either.
 
+To come back to one later, keep it under a name: "Save as…" in the
+panel's Saved tab, or `theme save NAME`. It goes to
+`~/.local/state/themes/NAME/` with a copy of the picture, so deleting the
+download doesn't break it. Try one from the Saved tab, or apply it with
+`theme load NAME`; `theme saved` lists them and `theme forget NAME` drops
+one.
+
 ## Screenshots
 
 | | |

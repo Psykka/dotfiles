@@ -10,6 +10,11 @@ Usage: theme [name]     apply a palette (default: the current one)
                         and apply (an empty VALUE drops the key)
        theme preview KEY=VALUE ...  apply with these values, saving nothing
                         (with none: back to what is saved)
+       theme save NAME      keep this machine's choices (wallpaper and colors)
+                        under a name, with a copy of the picture
+       theme load NAME      make a kept one this machine's choices, and apply
+       theme saved          names of the kept ones, newest first
+       theme forget NAME    drop a kept one
 
 `local` and `preview` change only colors and the wallpaper, so they skip
 `swaymsg reload` (it redraws everything and the screen blinks): sway gets
@@ -24,10 +29,14 @@ VSCode picks it up after "Developer: Reload Window".
 
 Choices of this machine (the wallpaper and its colors, picked in the
 wallpaper panel) go in ~/.local/state/theme-local.ini, on top of the
-palette, so they stay out of the repo. The files `theme` writes are not in
-git either (.gitignore): the palettes and templates are the source.
+palette, so they stay out of the repo. `save` keeps them for later in
+~/.local/state/themes/NAME/ (theme.ini and the picture, copied so that
+deleting a download doesn't break it); $THEME_SAVED moves that folder.
+The files `theme` writes are not in git either (.gitignore): the palettes
+and templates are the source.
 """
 import json
+import os
 import pathlib
 import shutil
 import subprocess
@@ -40,6 +49,7 @@ THEMES = REPO / "themes"
 TEMPLATES = THEMES / "templates"
 CURRENT = THEMES / "current"
 LOCAL = pathlib.Path.home() / ".local/state/theme-local.ini"
+SAVED = pathlib.Path(os.environ.get("THEME_SAVED") or pathlib.Path.home() / ".local/state/themes")
 
 # Templates that only make sense on SwayFX (rounded corners, shadows)
 FX_ONLY = ("sway/.config/sway/fx.d/",)
@@ -125,9 +135,42 @@ def set_local(values):
     local = read_ini(LOCAL)
     local.update(values)
     local = {k: v for k, v in local.items() if v}
-    LOCAL.parent.mkdir(parents=True, exist_ok=True)
-    LOCAL.write_text("# This machine's theme choices (`theme local`), on top of the palette\n"
-                     + "".join(f"{k}={v}\n" for k, v in local.items()))
+    write_ini(LOCAL, local, "# This machine's theme choices (`theme local`), on top of the palette\n")
+
+
+def write_ini(path, values, header):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(header + "".join(f"{k}={v}\n" for k, v in values.items()))
+
+
+def saved_dir(name):
+    if not name or "/" in name or name.startswith(".") or len(name) > 40:
+        sys.exit(f"theme: {name!r} can't be a name (no \"/\", no leading dot, up to 40 characters)")
+    return SAVED / name
+
+
+def save(current, name):
+    """This machine's choices under a name; the picture is copied in, so the
+    kept one doesn't depend on the download staying."""
+    folder = saved_dir(name)
+    values = read_ini(LOCAL)
+    picture = pathlib.Path(os.path.expanduser(palette(current)["wallpaper"]))
+    if not picture.is_file():
+        sys.exit(f"theme: the wallpaper {picture} is not there")
+    tmp = SAVED / f".{name}.new"
+    shutil.rmtree(tmp, ignore_errors=True)
+    tmp.mkdir(parents=True)
+    # copy2 keeps the time too: the panel tells the picture in use by it
+    shutil.copy2(picture, tmp / picture.name)
+    values["wallpaper"] = str(folder / picture.name)
+    write_ini(tmp / "theme.ini", values, f"# Kept with `theme save {name}`\n")
+    shutil.rmtree(folder, ignore_errors=True)
+    tmp.rename(folder)
+
+
+def saved_names():
+    found = [p for p in SAVED.glob("*/theme.ini") if not p.parent.name.startswith(".")]
+    return [p.parent.name for p in sorted(found, key=lambda p: -p.stat().st_mtime)]
 
 
 def render(values):
@@ -225,6 +268,29 @@ def main():
         for key, value in read_ini(LOCAL).items():
             print(f"{key}={value}")
         return
+    if arg == "saved" and len(sys.argv) == 2:
+        print("\n".join(saved_names()))
+        return
+    if arg == "save" and len(sys.argv) == 3:
+        save(current, sys.argv[2])
+        return
+    if arg == "forget" and len(sys.argv) == 3:
+        folder = saved_dir(sys.argv[2])
+        in_use = os.path.expanduser(read_ini(LOCAL).get("wallpaper", ""))
+        if pathlib.Path(in_use).parent == folder:
+            sys.exit(f"theme: {sys.argv[2]!r} is in use; pick another before forgetting it")
+        shutil.rmtree(folder, ignore_errors=True)
+        return
+    if arg == "load" and len(sys.argv) == 3:
+        kept = saved_dir(sys.argv[2]) / "theme.ini"
+        if not kept.is_file():
+            sys.exit(f"theme: nothing kept as {sys.argv[2]!r} (theme saved lists them)")
+        known = load(current)
+        # Replaces this machine's choices: what the kept one doesn't name
+        # goes back to the palette's own
+        sys.argv[2:] = [f"{k}={v}" for k, v in read_ini(kept).items() if k in known]
+        sys.argv[2:] += [f"{k}=" for k in read_ini(LOCAL) if k in known and k not in read_ini(kept)]
+        arg = "local"
     if arg in ("preview", "local"):
         values = pairs(current, sys.argv[2:])
         before = sway_lines()

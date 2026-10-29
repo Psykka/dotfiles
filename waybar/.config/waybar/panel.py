@@ -170,6 +170,7 @@ button.thumb.picked { border-color: @accent; }
 .loading { opacity: 0.4; transition: opacity 150ms; }
 .panel.slim { padding: 8px 8px 8px 16px; }
 .notice { background: @bg0; border-radius: 6px; padding: 10px 14px; }
+.thumb-name { padding: 3px 6px 4px; }
 .mark { background: @accent; color: @bg0; border-radius: 4px; font-size: 9px; padding: 2px 4px; margin: 4px; }
 button.chip { padding: 2px; border: 1px solid transparent; border-radius: 4px; }
 button.chip:hover { background: transparent; border-color: @faint; }
@@ -183,6 +184,8 @@ button.tab.on { background: @bg2; color: @hi; }
 .tuning:disabled { opacity: 0.5; }
 entry.search { background: @bg2; color: @fg; border: none; border-radius: 4px; box-shadow: none; padding: 4px 8px; }
 entry.search image { color: @mute; }
+/* In the wallpaper panel's bottom bar: no taller than its buttons */
+entry.search.in-bar { padding: 2px 8px; min-height: 0; }
 
 .today-big { color: @hi; font-size: 18px; font-weight: bold; }
 .month { color: @hi; }
@@ -2683,6 +2686,7 @@ THUMB_W, THUMB_H = 144, 81
 CELL_W, CELL_H = THUMB_W + 4, THUMB_H + 4  # with the border
 COLUMNS = 4
 LOCAL_PAGE = 12  # downloaded wallpapers per page
+KEPT_PAGE = 8  # saved themes per page (taller: their name is under them)
 
 
 def cover(pix, w, h):
@@ -2777,11 +2781,48 @@ class Spinner(Gtk.DrawingArea):
         return False
 
 
+class TinyMock(Gtk.DrawingArea):
+    """The Colors page's desktop mock, drawn small over a saved theme's
+    picture: the bar's islands hanging from the top and one window with the
+    focused border, so most of the picture still shows."""
+
+    def __init__(self, colors):
+        super().__init__()
+        self.colors = colors
+        self.connect("draw", self.draw)
+
+    def draw(self, _w, cr):
+        W = self.get_allocated_width()
+        H = self.get_allocated_height()
+
+        def fill(key, x, y, w, h, r=2):
+            cr.set_source_rgb(*wallpaper.rgb(self.colors[key]))
+            rounded(cr, x, y, w, h, min(r, w / 2, h / 2))
+            cr.fill()
+
+        # Islands
+        fill("island", 3, -3, 22, 9)
+        for i, key in enumerate(("hi", "mute", "mute")):
+            fill(key, 7 + i * 5, 2, 2, 2, 1)
+        fill("island", W / 2 - 16, -3, 32, 9)
+        fill("fg", W / 2 - 9, 2, 18, 1.5, 1)
+        fill("island", W - 27, -3, 24, 9)
+        fill("mute", W - 22, 2, 14, 1.5, 1)
+        # A window with the focused border, in the bottom left corner
+        x, y, w, h = 6, H - 32, 46, 26
+        fill("accent", x, y, w, h, 3)
+        fill("bg0", x + 1.5, y + 1.5, w - 3, h - 3, 2)
+        for i, (key, lw) in enumerate((("hi", 18), ("fg", 32), ("sub", 26), ("mute", 14))):
+            fill(key, x + 5, y + 5 + i * 4.5, lw, 1.5, 1)
+        return False
+
+
 class Thumb(Gtk.Button):
     """A wallpaper in a grid; the picture loads in the background, and a
-    check marks the one in use."""
+    check marks the one in use. A saved theme also has its colors on the
+    picture (a tiny desktop) and its name under it."""
 
-    def __init__(self, source, on_click, current=False):
+    def __init__(self, source, on_click, current=False, name=None, colors=None):
         super().__init__()
         css(self, "thumb")
         self.alive = True
@@ -2789,12 +2830,24 @@ class Thumb(Gtk.Button):
         self.image = Gtk.Image()
         self.image.set_size_request(THUMB_W, THUMB_H)
         overlay.add(self.image)
+        if colors:
+            mock = TinyMock(colors)
+            overlay.add_overlay(mock)
+            overlay.set_overlay_pass_through(mock, True)
         if current:
             mark = label(ICON["check"], ["icon", "mark"], xalign=0.5)
             mark.set_halign(Gtk.Align.END)
             mark.set_valign(Gtk.Align.END)
             overlay.add_overlay(mark)
-        self.add(overlay)
+        if name is None:
+            self.add(overlay)
+        else:
+            box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+            box.pack_start(overlay, False, False, 0)
+            title = label(name, ["small", "thumb-name"], ellipsize=True)
+            title.set_max_width_chars(1)  # as wide as the picture, not the name
+            box.pack_start(title, False, False, 0)
+            self.add(box)
         self.connect("clicked", lambda _: on_click())
         self.connect("destroy", lambda _: setattr(self, "alive", False))
         threading.Thread(target=self.load, args=(source,), daemon=True).start()
@@ -2951,9 +3004,12 @@ class Wallpapers(Gtk.Box):
         self.results = {"items": [], "page": 1, "last": 1, "total": 0, "seed": None}
         self.query = 0
         self.local_page = 0
+        self.kept = []  # saved themes (wallpaper.kept())
+        self.kept_page = 0
+        self.name_draft = ""
         self.picked = None  # ("wallhaven", item) or ("local", path)
         self.busy = None
-        self.asking = None  # "save" or "delete"
+        self.asking = None  # "save", "delete" or "name" (to keep a theme)
         self.found = []
         self.load_saved()
         self.screen = self.wanted()  # what is on the desktop
@@ -2961,7 +3017,8 @@ class Wallpapers(Gtk.Box):
         top = Gtk.Box(spacing=4)
         top.pack_start(label("WALLPAPER", ["heading"]), True, True, 0)
         self.tabs = {}
-        for name, text in (("wallhaven", "Wallhaven"), ("downloaded", "Downloaded"), ("colors", "Colors")):
+        for name, text in (("wallhaven", "Wallhaven"), ("downloaded", "Downloaded"), ("saved", "Saved"),
+                           ("colors", "Colors")):
             b = css(Gtk.Button(label=text), "tab")
             b.connect("clicked", lambda _, n=name: self.show_tab(n))
             top.pack_start(b, False, False, 0)
@@ -2972,6 +3029,7 @@ class Wallpapers(Gtk.Box):
         self.pages = Gtk.Stack(transition_type=Gtk.StackTransitionType.CROSSFADE, transition_duration=150)
         self.pages.add_named(self.search_page(), "wallhaven")
         self.pages.add_named(self.local_page_box(), "downloaded")
+        self.pages.add_named(self.kept_page_box(), "saved")
         self.pages.add_named(self.colors_page(), "colors")
         self.full.pack_start(self.pages, False, False, 0)
 
@@ -2986,6 +3044,7 @@ class Wallpapers(Gtk.Box):
         self.filter_revealer.set_reveal_child(False)
         self.show_tab("wallhaven")
         self.show_local()
+        self.show_kept()
         self.load_colors()
         self.search()
 
@@ -3354,6 +3413,53 @@ class Wallpapers(Gtk.Box):
         self.local_pager.prev.set_sensitive(self.local_page > 0)
         self.local_pager.next.set_sensitive(self.local_page < pages - 1)
 
+    # ------------------------------------------------------------- saved
+
+    def kept_page_box(self):
+        page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        self.kept_intro = label(css=["muted", "small"], ellipsize=True)
+        page.pack_start(self.kept_intro, False, False, 0)
+        self.kept_grid = Gtk.Grid(row_spacing=6, column_spacing=6)
+        # As tall as the Downloaded grid, so the tabs line up
+        self.kept_grid.set_size_request(-1, THUMB_H * 3 + 4 * 3 + 12)
+        self.kept_grid.set_valign(Gtk.Align.START)
+        page.pack_start(self.kept_grid, True, True, 0)
+        self.kept_pager = self.pager(self.kept_step)
+        page.pack_end(self.kept_pager, False, False, 0)
+        return page
+
+    def kept_step(self, step):
+        self.kept_page += step
+        self.show_kept()
+
+    def kept_theme(self, name):
+        return next((t for t in self.kept if t["name"] == name), None)
+
+    def kept_in_use(self, t):
+        return t["colors"] == self.saved_colors and wallpaper.same_picture(t["wallpaper"], self.saved_path)
+
+    def show_kept(self):
+        self.kept = wallpaper.kept()
+        pages = max(1, -(-len(self.kept) // KEPT_PAGE))
+        self.kept_page = max(0, min(self.kept_page, pages - 1))
+        shown = self.kept[self.kept_page * KEPT_PAGE:(self.kept_page + 1) * KEPT_PAGE]
+        for c in self.kept_grid.get_children():
+            c.destroy()
+        for i, t in enumerate(shown):
+            what = ("saved", t["name"])
+            th = Thumb(t["wallpaper"], lambda w=what: self.pick(w), self.kept_in_use(t), name=t["name"],
+                       colors={**self.base, **t["colors"]})
+            th.what = what
+            css(th, "picked", on=what == self.picked)
+            self.kept_grid.attach(th, i % COLUMNS, i // COLUMNS, 1, 1)
+        self.kept_grid.show_all()
+        self.kept_intro.set_text("Wallpapers with their colors, kept to use again" if self.kept else
+                                 "Nothing kept yet: “Save as…” keeps the wallpaper and colors in use")
+        self.kept_pager.text.set_text(f"Page {self.kept_page + 1} of {pages} · "
+                                      f"{len(self.kept)} theme{'s' if len(self.kept) != 1 else ''}")
+        self.kept_pager.prev.set_sensitive(self.kept_page > 0)
+        self.kept_pager.next.set_sensitive(self.kept_page < pages - 1)
+
     # ------------------------------------------------------------ colors
 
     def colors_page(self):
@@ -3506,7 +3612,7 @@ class Wallpapers(Gtk.Box):
     def pick(self, what):
         self.picked = what
         self.asking = None
-        for grid in (self.wh_grid, self.local_grid):
+        for grid in (self.wh_grid, self.local_grid, self.kept_grid):
             for t in grid.get_children():
                 css(t, "picked", on=t.what == what)
         self.show_bar()
@@ -3515,9 +3621,21 @@ class Wallpapers(Gtk.Box):
         kind, what = self.picked
         if kind == "wallhaven":
             return f"{what['resolution'].replace('x', '×')} · {what['size'] / 1e6:.1f} MB · {what['category']}"
+        if kind == "saved":
+            t = self.kept_theme(what)
+            colors = "" if t["colors"] else " · theme colors"
+            return f"{what} · {os.path.basename(t['wallpaper'])}{colors}" + (" · in use" if self.kept_in_use(t) else "")
         info = GdkPixbuf.Pixbuf.get_file_info(what)
         size = f" · {info[1]}×{info[2]}" if info and info[0] else ""
         return os.path.basename(what) + size + (" · in use" if self.in_use(what) else "")
+
+    def showing(self, what):
+        """The picked one is what the controls already have."""
+        kind, x = what
+        if kind == "local":
+            return x == self.source
+        t = self.kept_theme(x) if kind == "saved" else None
+        return bool(t) and t["wallpaper"] == self.source and t["colors"] == self.colors()
 
     def show_bar(self):
         for c in self.bar.get_children():
@@ -3535,8 +3653,8 @@ class Wallpapers(Gtk.Box):
             buttons.append(b)
 
         # The Colors page works on what is being tried, not on the picked one
-        picked_new = (self.picked and self.pages.get_visible_child_name() != "colors"
-                      and not (self.picked[0] == "local" and self.picked[1] == self.source))
+        tab = self.pages.get_visible_child_name()
+        picked_new = self.picked and tab != "colors" and not self.showing(self.picked)
         if self.busy:
             info.set_text(self.busy)
         elif self.asking == "save":
@@ -3546,10 +3664,35 @@ class Wallpapers(Gtk.Box):
             button("No", lambda: self.ask(None))
             button("Save", self.save, yes=True)
         elif self.asking == "delete":
-            info.set_text(f"Delete {os.path.basename(self.picked[1])}?")
+            kind, what = self.picked
+            info.set_text(f"Forget {what}?" if kind == "saved" else f"Delete {os.path.basename(what)}?")
             info.get_style_context().remove_class("muted")
             button("No", lambda: self.ask(None))
-            button("Delete", self.delete, yes=True)
+            button("Forget" if kind == "saved" else "Delete", self.delete, yes=True)
+        elif self.asking == "name":
+            # The wallpaper and colors saved now, under a name
+            info.set_text("Keep it as")
+            info.get_style_context().remove_class("muted")
+            self.bar.child_set_property(info, "expand", False)
+            entry = css(Gtk.Entry(hexpand=True, max_length=40, placeholder_text="Name"), "search", "small",
+                        "in-bar")
+            entry.set_text(self.name_draft)
+            self.bar.pack_start(entry, True, True, 0)
+            button("No", lambda: self.ask(None))
+            button("Keep", lambda: self.keep(entry.get_text().strip()), yes=True)
+            keep_button = buttons[-1]
+            keep_button.set_size_request(70, -1)  # "Keep" or "Replace", the entry doesn't move
+            entry.set_activates_default(False)
+            entry.connect("activate", lambda _: keep_button.clicked())
+
+            def named(_):
+                self.name_draft = entry.get_text()
+                name = self.name_draft.strip()
+                keep_button.set_label("Replace" if self.kept_theme(name) else "Keep")
+                keep_button.set_sensitive(bool(name) and "/" not in name and not name.startswith("."))
+            entry.connect("changed", named)
+            named(None)
+            GLib.idle_add(lambda: entry.grab_focus() or entry.set_position(-1) or False)
         elif self.trying() or self.wanted() != self.screen:
             if self.wanted() != self.screen:
                 info.set_text("Changed: try it on the desktop before saving")
@@ -3571,12 +3714,24 @@ class Wallpapers(Gtk.Box):
             kind, what = self.picked
             if kind == "wallhaven":
                 button("Wallhaven", lambda: spawn("xdg-open", what["url"]))
+            elif kind == "saved":
+                if not self.kept_in_use(self.kept_theme(what)):
+                    button("Forget…", lambda: self.ask("delete"))
             elif wallpaper.can_delete(what) and not self.in_use(what):
                 button("Delete…", lambda: self.ask("delete"))
             if picked_new:
                 button("Try it", self.try_picked, yes=True)
+        elif tab == "saved":
+            info.set_text("Pick a theme to try it on the desktop")
         else:
             info.set_text("Pick a wallpaper to try it on the desktop")
+        if tab == "saved" and not (self.busy or self.asking or self.trying() or self.wanted() != self.screen):
+            # What is saved now, kept for later; first, before the picked one's buttons
+            def ask_name():
+                self.name_draft = os.path.splitext(os.path.basename(wallpaper.original(self.saved_path)[0]))[0]
+                self.ask("name")
+            button("Save as…", ask_name)
+            buttons.insert(0, buttons.pop())
         for b in buttons:
             self.bar.pack_start(b, False, False, 0)
         self.bar.show_all()
@@ -3609,6 +3764,15 @@ class Wallpapers(Gtk.Box):
         if kind == "local":
             self.use_source(what)
             return
+        if kind == "saved":
+            t = self.kept_theme(what)
+            if not t or not os.path.exists(t["wallpaper"]):
+                self.picked = None
+                self.show_kept()
+                self.fail(f"{what} is gone")
+                return
+            self.use_kept(t)
+            return
         self.set_busy("Downloading…")
 
         def progress(f):
@@ -3636,6 +3800,37 @@ class Wallpapers(Gtk.Box):
         self.override = None
         self.busy = "Reading its colors…"
         self.load_colors(then=self.apply)
+
+    def use_kept(self, t):
+        """A saved theme: its picture and its colors as they were kept (until
+        a control is touched), then on the desktop."""
+        self.source = t["wallpaper"]
+        self.edits = dict(wallpaper.EDIT)
+        self.accent = None
+        self.mode = "wallpaper" if t["colors"] else "theme"
+        self.override = dict(t["colors"]) if t["colors"] else None
+        self.busy = "Reading its colors…"
+        self.load_colors(then=self.apply)
+
+    def keep(self, name):
+        """What is saved, kept for later under a name (`theme save`)."""
+        self.asking = None
+        self.set_busy("Keeping it…")
+
+        def work():
+            err = wallpaper.keep(name)
+            GLib.idle_add(self.kept_done, name, err)
+        threading.Thread(target=work, daemon=True).start()
+
+    def kept_done(self, name, err):
+        self.busy = None
+        if err:
+            return self.fail(f"Couldn't keep it: {err}")
+        self.picked = ("saved", name)
+        self.show_kept()
+        self.show_bar()
+        self.bar.get_children()[0].set_text(f"Kept as {name}")
+        return False
 
     def apply(self):
         """Puts the picture, its edits and the colors on the desktop."""
@@ -3678,6 +3873,7 @@ class Wallpapers(Gtk.Box):
         self.busy = None
         restyle()
         self.show_local()
+        self.show_kept()
         self.show_bar()
         self.bar.get_children()[0].set_text("Saved")
         return False
@@ -3886,10 +4082,15 @@ class Wallpapers(Gtk.Box):
         run("pkill", "-USR1", "-x", "waybar")  # shown again
 
     def delete(self):
-        wallpaper.delete(self.picked[1])
+        kind, what = self.picked
+        if kind == "saved":
+            wallpaper.forget(what)
+        else:
+            wallpaper.delete(what)
         self.picked = None
         self.asking = None
         self.show_local()
+        self.show_kept()
         self.show_bar()
 
 

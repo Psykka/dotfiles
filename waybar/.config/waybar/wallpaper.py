@@ -6,7 +6,9 @@ trying one out before keeping it.
 Used by the wallpaper panel (panel.py wallpaper). Nothing is saved until
 save(): preview() and show() only change the screen, revert() puts back
 what is saved. Saved choices go to ~/.local/state/theme-local.ini through
-`theme local`, on top of the palette, so the repo stays as it is.
+`theme local`, on top of the palette, so the repo stays as it is. Themes
+kept for later (`theme save`, the "Saved" tab) are in SAVED, each with a
+copy of its picture.
 
 Downloads go to ~/Pictures/Wallpapers, edited copies to its "edited"
 folder, thumbnails to ~/.cache/wallpaper. Edits need ImageMagick; colors
@@ -18,6 +20,7 @@ Usage: wallpaper.py colors FILE      main colors of a picture
        wallpaper.py search [QUERY]   first page of Wallhaven results
 """
 import colorsys
+import filecmp
 import hashlib
 import json
 import os
@@ -49,6 +52,7 @@ EDITED = DOWNLOADS / "edited"
 BUILTIN = HOME / ".local/share/wallpapers"  # wallpapers package
 CACHE = HOME / ".cache/wallpaper"
 KEY_FILE = HOME / ".local/state/wallhaven-key"
+SAVED = pathlib.Path(os.environ.get("THEME_SAVED") or HOME / ".local/state/themes")  # as in `theme`
 IMAGES = (".jpg", ".jpeg", ".png", ".webp")
 
 API = "https://wallhaven.cc/api/v1/search"
@@ -475,6 +479,41 @@ def save(path, colors):
 
 def revert():
     theme("preview")
+
+
+# ---------------------------------------------------- kept for later
+
+def kept():
+    """Themes kept with `theme save`, newest first:
+    [{"name", "wallpaper", "colors"}], colors as in saved()."""
+    out = []
+    for name in theme("saved").splitlines():
+        try:
+            lines = (SAVED / name / "theme.ini").read_text().splitlines()
+        except OSError:
+            continue
+        values = dict(l.split("=", 1) for l in lines if "=" in l and not l.startswith("#"))
+        out.append({"name": name, "wallpaper": os.path.expanduser(values.get("wallpaper", "")),
+                    "colors": {k: v for k, v in values.items() if k in COLOR_KEYS}})
+    return out
+
+
+def same_picture(a, b):
+    """The kept copy is the same file (`theme save` keeps its time)."""
+    try:
+        return str(a) == str(b) or filecmp.cmp(a, b)
+    except OSError:
+        return False
+
+
+def keep(name):
+    """What is saved now, kept under a name; the error, if any."""
+    out = subprocess.run([THEME, "save", name], capture_output=True, text=True)
+    return out.stderr.strip().removeprefix("theme: ") if out.returncode else None
+
+
+def forget(name):
+    theme("forget", name)
 
 
 def main():

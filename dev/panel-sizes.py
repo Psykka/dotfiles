@@ -17,13 +17,16 @@ Bluetooth one has pretend devices (dev/fake_bluetooth.py), the sound
 one a pretend sound server (dev/fake_audio.py) and the VPN one a pretend
 daemon (dev/fake_vpn.py). The
 wallpaper one tries a wallpaper already downloaded on the desktop, then
-discards it: nothing is saved. Not a stow package: nothing here is linked
+discards it: nothing is saved; its saved themes are pretend ones in a
+folder of their own ($THEME_SAVED), gone at the end. Not a stow package: nothing here is linked
 into ~.
 """
 import os
 import pathlib
+import shutil
 import subprocess
 import sys
+import tempfile
 
 PANEL_DIR = pathlib.Path(__file__).resolve().parents[1] / "waybar/.config/waybar"
 SAMPLE_MS = 10
@@ -34,6 +37,19 @@ def local_wallpaper():
     import wallpaper
     files = wallpaper.downloaded()
     return str(files[0]) if files else None
+
+
+def pretend_themes(folder, picture):
+    """Saved themes for the Saved tab: with colors, without, a long name,
+    and more than one page of them."""
+    names = ["pretend colors", "theme colors only", "a name far too long to fit under the picture"]
+    names += [f"more {i}" for i in range(6)]
+    for i, name in enumerate(names):
+        d = folder / name
+        d.mkdir(parents=True)
+        shutil.copy2(picture, d / os.path.basename(picture))
+        colors = "" if name == "theme colors only" else f"bg0=1a1420\nfg=e0d8f0\naccent=c09ae{i}\n"
+        (d / "theme.ini").write_text(f"wallpaper={d / os.path.basename(picture)}\n{colors}")
 
 
 # Steps of each popup: (wait ms, name, action(content), may resize).
@@ -56,6 +72,19 @@ def steps(mode):
             (800, "pick a local one", lambda w: w.pick(("local", local)), False),
             (500, "ask to delete", lambda w: w.ask("delete"), False),
             (500, "don't delete", lambda w: w.ask(None), False),
+            (500, "tab Saved", lambda w: w.show_tab("saved"), False),
+            (800, "next saved page", lambda w: w.kept_step(1), False),
+            (800, "back a page", lambda w: w.kept_step(-1), False),
+            (800, "pick a saved one", lambda w: w.pick(("saved", "pretend colors")), False),
+            (500, "ask to forget", lambda w: w.ask("delete"), False),
+            (500, "don't forget", lambda w: w.ask(None), False),
+            (500, "ask a name", lambda w: (setattr(w, "name_draft", "mine"), w.ask("name")), False),
+            (500, "a name taken", lambda w: name_entry(w).set_text("pretend colors"), False),
+            (500, "a long name", lambda w: name_entry(w).set_text("x" * 40), False),
+            (500, "keep it", lambda w: w.keep("kept by the test"), False),
+            (1500, "try a saved one", lambda w: (w.pick(("saved", "pretend colors")), w.try_picked()), False),
+            (4000, "discard it", lambda w: w.discard(), False),
+            (4000, "pick a local one again", lambda w: w.pick(("local", local)), False),
             (500, "tab Colors", lambda w: w.show_tab("colors"), False),
             (800, "colors from the wallpaper", lambda w: w.set_mode("wallpaper"), False),
             (500, "style Vivid", lambda w: w.set_style(dict(panel.wallpaper.PRESETS[2][1])), False),
@@ -209,6 +238,11 @@ def stop_fake_player():
         fake.pop().terminate()
 
 
+def name_entry(w):
+    from gi.repository import Gtk
+    return next(c for c in w.bar.get_children() if isinstance(c, Gtk.Entry))
+
+
 MODES = ("wallpaper", "menu", "sound", "bluetooth", "vpn", "calendar", "media")
 
 
@@ -216,6 +250,10 @@ def run(mode, shots):
     """In its own process: panel.py's main loop runs once per process."""
     sys.path.insert(0, str(PANEL_DIR))
     sys.argv = ["panel.py", mode]
+    if mode == "wallpaper":
+        # Before panel (and wallpaper.py) read it; `theme` gets it too
+        saved = tempfile.mkdtemp(prefix="panel-sizes-themes-")
+        os.environ["THEME_SAVED"] = saved
     import panel
     from gi.repository import GLib, Gtk
 
@@ -234,6 +272,8 @@ def run(mode, shots):
         import fake_vpn
         panel.vpn = fake_vpn
     plan = steps(mode)
+    if mode == "wallpaper" and plan:
+        pretend_themes(pathlib.Path(saved), local_wallpaper())
     if plan is None:
         print(f"{mode}: skipped (nothing to try it with)")
         return 0
@@ -278,6 +318,8 @@ def run(mode, shots):
         panel.main()
     finally:
         stop_fake_player()
+        if mode == "wallpaper":
+            shutil.rmtree(saved, ignore_errors=True)
 
     def wh(size):
         return f"{size[0]}x{size[1]}"
