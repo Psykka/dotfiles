@@ -2,7 +2,8 @@
 """Notifications: the desktop's notification server (in place of mako), in
 the look of the bar popups.
 
-Cards on the top right, newest first, all of the same size whatever they
+Cards on the top right of the main display (the menu's Displays page),
+newest first, all of the same size whatever they
 say: the title on one line, the body on two (one when there are buttons or
 a progress bar), the picture in a square. A thin bar along the bottom of a
 card shows the time left, and stops while the mouse is on it. Click: the
@@ -40,6 +41,8 @@ gi.require_version("GdkPixbuf", "2.0")
 gi.require_version("GtkLayerShell", "0.1")
 import cairo  # noqa: E402
 from gi.repository import Gdk, GdkPixbuf, Gio, GLib, Gtk, GtkLayerShell, Pango  # noqa: E402
+
+import displays  # noqa: E402
 
 NAME = "org.freedesktop.Notifications"
 PATH = "/org/freedesktop/Notifications"
@@ -207,6 +210,19 @@ def transparent(window):
     if visual:
         window.set_visual(visual)
     window.set_app_paintable(True)
+
+
+def on_main_display(window):
+    """Puts a window on the main display (the menu's Displays page), not
+    the focused one. GDK 3 only knows the ports through a deprecated call."""
+    name = displays.primary_name()
+    screen = Gdk.Screen.get_default()
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+        for i in range(screen.get_n_monitors()):
+            if screen.get_monitor_plug_name(i) == name:
+                GtkLayerShell.set_monitor(window, screen.get_display().get_monitor(i))
+                return
 
 
 # ------------------------------------------------------------------- cards
@@ -414,6 +430,8 @@ class Stack(Gtk.Window):
                 card.set_opacity(0)
             card.target = (SHADOW, SHADOW + i * (CARD_H + GAP))
         if cards or self.fixed.get_children():
+            if not self.get_visible():
+                on_main_display(self)
             self.show()
         self.animate()
 
@@ -497,6 +515,8 @@ class Osd(Gtk.Window):
     def show_value(self, text, value):
         self.text.set_text(text)
         self.level.set_value(max(0, min(100, int(value or 0))))
+        if not self.get_visible():
+            on_main_display(self)
         self.show()
         if self.timer:
             GLib.source_remove(self.timer)

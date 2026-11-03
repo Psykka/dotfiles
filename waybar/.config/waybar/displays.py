@@ -5,8 +5,9 @@ resolution and scale of each one, and their order side by side.
 Usage: displays.py save  writes the current layout (also after changing it
                          in wdisplays), so it comes back at the next login
 
-The main display holds workspaces 1..6 and has the focus at login; the
-others have their own (~/.config/sway/workspaces.py). Settings are
+The main display holds workspaces 1..6, has the focus at login and shows
+the notifications and the lock screen's password; the others have their
+own workspaces (~/.config/sway/workspaces.py). Settings are
 kept per monitor (make, model and serial, so a monitor keeps them on any
 port) in a file sway includes; a monitor that is not plugged in keeps its
 line for the next time it is.
@@ -92,6 +93,14 @@ def primary(items=None):
         ws = []
     holder = next((w["output"] for w in ws if w["name"] == "1"), None)
     return next((o["id"] for o in items if o["name"] == holder), items[0]["id"] if items else None)
+
+
+def primary_name(items=None):
+    """Port of the main display (eDP-1, HDMI-A-1...): what shows on one
+    display only (notifications, the lock screen's password) goes there."""
+    items = items if items is not None else outputs()
+    main = primary(items)
+    return next((o["name"] for o in items if o["id"] == main), None)
 
 
 def arrange_workspaces():

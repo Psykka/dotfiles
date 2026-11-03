@@ -13,7 +13,7 @@ Usage: lock    (returns once the screen is locked)
 import os
 import pathlib
 import subprocess
-import json
+import sys
 
 import gi
 
@@ -36,13 +36,17 @@ def rgba(hexcolor, alpha):
     return f"rgba({r}, {g}, {b}, {alpha})"
 
 
-def screen_size():
-    out = subprocess.run(["swaymsg", "-t", "get_outputs"], capture_output=True, text=True).stdout
-    outputs = [o for o in json.loads(out or "[]") if o.get("active")]
-    focused = next((o for o in outputs if o.get("focused")), outputs[0] if outputs else None)
-    if not focused:
-        return 1920, 1080
-    return focused["rect"]["width"], focused["rect"]["height"]
+def main_display():
+    """(port, width, height) of the main display (the menu's Displays page):
+    the password shows there, so the circle is laid out for its size."""
+    sys.path.insert(0, str(HOME / ".config/waybar"))
+    import displays
+    items = displays.outputs()
+    name = displays.primary_name(items)
+    main = next((o for o in items if o["name"] == name), items[0] if items else None)
+    if not main:
+        return None, 1920, 1080
+    return main["name"], main["rect"]["width"], main["rect"]["height"]
 
 
 def blurred(wallpaper):
@@ -113,14 +117,17 @@ window {{
 def main():
     wallpaper, bg0, fg, hi, error = palette("wallpaper", "bg0", "fg", "hi", "bright_red")
     wallpaper = os.path.expanduser(wallpaper)
-    sw, sh = screen_size()
+    port, sw, sh = main_display()
     css = CACHE / "style.css"
     CACHE.mkdir(parents=True, exist_ok=True)
     css.write_text(stylesheet(wallpaper, blurred(wallpaper), sw, sh, bg0, fg, hi, error))
 
     env = dict(os.environ, XDG_CONFIG_HOME=str(CONFIG / "xdg"))
-    os.execvpe("gtklock", ["gtklock", "-d", "-s", str(css), "-x", str(CONFIG / "layout.ui"),
-                           "-t", "%H:%M", "-D", "%A, %d %B"], env)
+    args = ["gtklock", "-d", "-s", str(css), "-x", str(CONFIG / "layout.ui"),
+            "-t", "%H:%M", "-D", "%A, %d %B"]
+    if port:
+        args += ["-M", port]
+    os.execvpe("gtklock", args, env)
 
 
 if __name__ == "__main__":
