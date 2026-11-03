@@ -78,9 +78,14 @@ bindsym $mod+Shift+r reload
 # Polkit agent (password prompt); its path differs between distros
 exec sh -c 'for a in /usr/libexec/polkit-mate-authentication-agent-1 /usr/lib/mate-polkit/polkit-mate-authentication-agent-1; do [ -x "$a" ] && exec "$a"; done'
 
-# Lock: Super+L, or automatically after 20 min (never suspends)
+# Lock: Super+L, or automatically after 20 min (never suspends). The
+# screens go dark 30 s into a lock and wake on any key or move; checking
+# for gtklock keeps them on while unlocked
 bindsym $mod+l exec lock
-exec swayidle -w timeout 1200 lock
+exec swayidle -w \
+    timeout 30 'pgrep -x gtklock >/dev/null && swaymsg "output * power off"' resume 'swaymsg "output * power on"' \
+    timeout 1200 lock \
+    timeout 1230 'swaymsg "output * power off"' resume 'swaymsg "output * power on"'
 
 # Keyboard: US ANSI with accents (dead keys)
 input type:keyboard {
