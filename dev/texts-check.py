@@ -7,7 +7,9 @@ texts.py's tr()) against the code that uses them:
 - the {fields} of a text are exactly the names the code passes it.
 
 Python code is read with ast (tr() calls with a literal key); shell scripts
-with a regex for their `text section.key` calls. Exit status 1 on any
+with a regex for their `text section.key` calls (and keys.sh's T["..."]).
+menu.sh builds its keys from its entries ("menu.$key"): those are listed
+in ENTRIES there and read from it. Exit status 1 on any
 problem. Not a stow package: nothing here is linked into ~.
 
 Usage: dev/texts-check.py
@@ -48,8 +50,17 @@ def uses():
                 found.append((path, node.lineno, node.args[0].value, names))
     for path in sorted(ROOT.glob("**/*.sh")):
         for n, line in enumerate(path.read_text(errors="replace").splitlines(), 1):
-            for key in re.findall(r"\btext ([a-z0-9-]+\.[a-z0-9-]+)", line):
+            # text menu.lock (texts.sh), and T["keys.x"] in keys.sh's awk
+            for key in re.findall(r"\btext \"?([a-z0-9-]+\.[a-z0-9-]+)", line) + \
+                    re.findall(r'T\["([a-z0-9-]+\.[a-z0-9-]+)"\]', line):
                 found.append((path, n, key, None))
+    # menu.sh: "action:icon:key" entries, read as "menu.key"
+    menu = ROOT / "sway/.config/sway/menu.sh"
+    entries = re.search(r'^ENTRIES="([^"]*)"', menu.read_text(), re.M)
+    if entries:
+        line = menu.read_text()[:entries.start()].count("\n") + 1
+        for e in entries.group(1).split():
+            found.append((menu, line, "menu." + e.rsplit(":", 1)[-1], None))
     return found
 
 

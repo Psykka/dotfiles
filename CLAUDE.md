@@ -18,6 +18,19 @@ Stow package linked into `~` (`install.sh`); `dev/` is not one.
 - `theme preview` / `theme local` change colors without `swaymsg reload`
   (it makes the screen blink); keep it that way.
 
+## Texts in one place
+
+Every word the bar, its popups, menus and notifications show lives in
+`waybar/.config/waybar/texts/en.ini`, by area (`[spotify]`, `[vpn]`,
+`[menu]`, `[keys]`...): Python reads it with `tr("section.key", name=value)`
+(`texts.py`; `tr`, not `t`, which is often a local), shell scripts with
+`text section.key name=value` (`. ~/.config/waybar/texts.sh`). New texts go
+there, never inline; commands, D-Bus names and API values stay in the code.
+A menu that knows a pick by its words compares against the line it built
+(see `menu.sh`'s ENTRIES), so the words can change freely.
+`dev/texts-check.py` (also run by panel-sizes) checks the keys used exist,
+none is left unused and each text's `{fields}` match the code.
+
 ## Bar popups must stay fluid
 
 `waybar/.config/waybar/panel.py` holds every bar popup (GTK3 + layer

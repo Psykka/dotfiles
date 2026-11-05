@@ -7,8 +7,9 @@ dir="$HOME/Pictures/Screenshots"
 file="$dir/$(date +'%Y-%m-%d_%H-%M-%S').png"
 mkdir -p "$dir"
 
-# Selection colors from the palette
+# Selection colors from the palette; the words from the bar's texts
 . ~/.config/sway/theme.env
+. ~/.config/waybar/texts.sh
 
 case $1 in
     area)
@@ -20,4 +21,4 @@ case $1 in
 esac || exit 1
 
 wl-copy --type image/png < "$file"
-notify-send -a Screenshot -i "$file" "Screenshot" "Saved to ~/Pictures/Screenshots and copied"
+notify-send -a Screenshot -i "$file" "$(text screenshot.title)" "$(text screenshot.saved)"

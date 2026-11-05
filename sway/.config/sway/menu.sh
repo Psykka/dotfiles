@@ -31,24 +31,53 @@ opensuse=$(printf '\357\237\226')
 tux=$(printf '\357\205\274')
 auto=$(printf '\357\203\220')
 
+# The words (texts/en.ini, shared with the bar's popups)
+. ~/.config/waybar/texts.sh
+
 menu() {
     fuzzel --dmenu -p "$1" --placeholder=""
 }
 
-# confirm ICON QUESTION
+# The entries: action, its icon (a variable above), its text's key in [menu].
+# A pick is known by the line it shows, built the same way: the words can
+# change in the texts without touching this
+ENTRIES="keybindings:keyboard:keybindings clipboard:clipboard:clipboard-history
+screenshot:camera:screenshot-area notifications:bell:notifications sound:volume:sound
+displays:display:displays bluetooth:bluetooth:bluetooth wallpaper:image:wallpaper
+logo:shapes:bar-logo lock:lock:lock logout:logout:log-out reboot:reboot:reboot
+poweroff:power:power-off"
+
+# entry ACTION: its "icon-variable:text-key"
+entry() {
+    for e in $ENTRIES; do
+        [ "${e%%:*}" = "$1" ] && echo "${e#*:}"
+    done
+}
+
+# icon ACTION, words ACTION, line ACTION: an entry's glyph, text, menu line
+icon() {
+    eval "printf '%s' \"\$$(entry "$1" | cut -d: -f1)\""
+}
+words() {
+    text "menu.$(entry "$1" | cut -d: -f2)"
+}
+line() {
+    printf '%s  %s\n' "$(icon "$1")" "$(words "$1")"
+}
+
+# confirm ACTION: asks Yes or No, with the action's own words
 confirm() {
-    case $(printf '%s  No\n%s  Yes\n' "$no" "$1" | menu "$2? ") in
-        *Yes) return 0 ;;
-        *) return 1 ;;
-    esac
+    yes="$(icon "$1")  $(text menu.yes)"
+    pick=$(printf '%s  %s\n%s\n' "$no" "$(text menu.no)" "$yes" | menu "$(text menu.ask action="$(words "$1")") ")
+    [ "$pick" = "$yes" ]
 }
 
 power() {
     case $1 in
-        lock)     confirm "$lock" "Lock" && exec lock ;;
-        logout)   confirm "$logout" "Log out" && exec swaymsg exit ;;
-        reboot)   confirm "$reboot" "Reboot" && exec systemctl reboot ;;
-        poweroff) confirm "$power" "Power off" && exec systemctl poweroff ;;
+        lock)     confirm lock && exec lock ;;
+        logout)   confirm logout && exec swaymsg exit ;;
+        reboot)   confirm reboot && exec systemctl reboot ;;
+        poweroff) confirm poweroff && exec systemctl poweroff ;;
     esac
 }
 
@@ -59,24 +88,17 @@ logo() {
         eval "glyph=\$$name"
         mark=" "; [ "$name" = "$current" ] && mark=$check
         printf '%s  %s  %s\n' "$mark" "$glyph" "$name"
-    done | menu "logo ❯ ") || exit 0
+    done | menu "$(text menu.logo-prompt)") || exit 0
     exec ~/.local/bin/theme set logo "${choice##* }"
 }
 
 system() {
-    {
-        printf '%s  Keybindings\n' "$keyboard"
-        printf '%s  Clipboard history\n' "$clipboard"
-        printf '%s  Screenshot (area)\n' "$camera"
-        printf '%s  Notifications\n' "$bell"
-        printf '%s  Sound\n' "$volume"
-        printf '%s  Displays\n' "$display"
+    for e in $ENTRIES; do
+        action=${e%%:*}
         # Only where there is a Bluetooth adapter
-        [ -n "$(ls -A /sys/class/bluetooth 2>/dev/null)" ] && printf '%s  Bluetooth\n' "$bluetooth"
-        printf '%s  Wallpaper\n' "$image"
-        printf '%s  Bar logo\n' "$shapes"
-        printf '%s  Lock\n%s  Log out\n%s  Reboot\n%s  Power off\n' "$lock" "$logout" "$reboot" "$power"
-    } | menu "system ❯ "
+        [ "$action" = bluetooth ] && [ -z "$(ls -A /sys/class/bluetooth 2>/dev/null)" ] && continue
+        line "$action"
+    done | menu "$(text menu.prompt)"
 }
 
 run() {
@@ -100,18 +122,10 @@ if [ -n "${1:-}" ]; then
     exit 0
 fi
 
-case $(system) in
-    *Keybindings)   run keybindings ;;
-    *Clipboard*)    run clipboard ;;
-    *Screenshot*)   run screenshot ;;
-    *Notifications) run notifications ;;
-    *Sound)         run sound ;;
-    *Displays)      run displays ;;
-    *Bluetooth)     run bluetooth ;;
-    *Wallpaper)     run wallpaper ;;
-    *"Bar logo")    run logo ;;
-    *Lock)          run lock ;;
-    *"Log out")     run logout ;;
-    *Reboot)        run reboot ;;
-    *"Power off")   run poweroff ;;
-esac
+pick=$(system) || exit 0
+for e in $ENTRIES; do
+    if [ "$pick" = "$(line "${e%%:*}")" ]; then
+        run "${e%%:*}"
+        exit 0
+    fi
+done

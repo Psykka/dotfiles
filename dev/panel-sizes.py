@@ -482,7 +482,11 @@ def main():
     unknown = [m for m in modes if m not in MODES]
     if unknown:
         sys.exit(f"panel-sizes: no steps for {', '.join(unknown)} (there are: {', '.join(MODES)})")
-    failed = 0
+    # The texts first (dev/texts-check.py): a key missing would break a popup
+    check = subprocess.run([sys.executable, str(pathlib.Path(__file__).with_name("texts-check.py"))],
+                           capture_output=True, text=True)
+    print(check.stdout.strip().splitlines()[-1] if check.returncode == 0 else check.stdout.strip(), flush=True)
+    failed = check.returncode != 0
     for mode in modes:
         print(f"{mode}:", flush=True)
         cmd = [sys.executable, __file__] + (["--shots", shots] if shots else []) + ["--run", mode]

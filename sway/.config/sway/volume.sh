@@ -1,5 +1,6 @@
 #!/bin/sh
 # Volume: up, down or mute (steps of 5, max 100%), with the on-screen indicator
+. ~/.config/waybar/texts.sh
 
 case $1 in
     up)   wpctl set-volume -l 1.0 @DEFAULT_AUDIO_SINK@ 5%+ ;;
@@ -12,7 +13,7 @@ esac
 set -- $(wpctl get-volume @DEFAULT_AUDIO_SINK@)
 level=$(awk -v v="$2" 'BEGIN { printf "%d", v * 100 + 0.5 }')
 if [ "${3:-}" = "[MUTED]" ]; then
-    ~/.config/sway/osd.sh volume "Muted" 0
+    ~/.config/sway/osd.sh volume "$(text volume.muted)" 0
 else
-    ~/.config/sway/osd.sh volume "Volume $level%" "$level"
+    ~/.config/sway/osd.sh volume "$(text volume.level level="$level")" "$level"
 fi
