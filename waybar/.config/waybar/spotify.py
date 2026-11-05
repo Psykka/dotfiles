@@ -94,7 +94,7 @@ def login():
     logs in and comes back here with a code, traded for the tokens."""
     cid = client_id()
     if not cid:
-        raise Failed(tr("spotify.no-spotify-app-store-its"))
+        raise Failed(tr("spotify.no-app"))
     verifier = secrets.token_urlsafe(64)
     challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
     state = secrets.token_urlsafe(16)
@@ -114,8 +114,7 @@ def login():
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.end_headers()
-            done = tr("spotify.logged-in") if "code" in got else tr("spotify.not-logged-in")
-            page = html.escape(tr("spotify.browser-done", done=done))
+            page = html.escape(tr("spotify.browser-signed-in") if "code" in got else tr("spotify.browser-not-signed-in"))
             self.wfile.write(f"<p style='font:16px sans-serif'>{page}</p>".encode())
 
         def log_message(self, *_):
@@ -124,7 +123,7 @@ def login():
     try:
         server = http.server.HTTPServer((host, port), Back)
     except OSError:
-        raise Failed(tr("spotify.port-is-busy-another-login", port=port))
+        raise Failed(tr("spotify.port-busy", port=port))
     server.timeout = 1
     url = ACCOUNTS + "authorize?" + urllib.parse.urlencode(dict(
         client_id=cid, response_type="code", redirect_uri=redirect, scope=SCOPES, state=state,
@@ -138,7 +137,7 @@ def login():
     finally:
         server.server_close()
     if "code" not in got:
-        raise Failed(tr("spotify.login-cancelled") if got else tr("spotify.login-timed-out"))
+        raise Failed(tr("spotify.sign-in-cancelled") if got else tr("spotify.sign-in-timed-out"))
     keep(token_request(grant_type="authorization_code", code=got["code"], redirect_uri=redirect,
                        client_id=cid, code_verifier=verifier))
 
@@ -200,7 +199,7 @@ def token_request(**form):
 def keep(tokens):
     # Spotify may hand out a new refresh token each time: the old one dies
     if tokens.get("refresh_token"):
-        store("refresh-token", tokens["refresh_token"], tr("spotify.spotify-login-the-bar-s"))
+        store("refresh-token", tokens["refresh_token"], tr("spotify.keyring-label"))
     fd = os.open(TOKEN_FILE, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w") as f:
         json.dump({"access": tokens["access_token"], "until": time.time() + tokens.get("expires_in", 3600) - 60}, f)
@@ -443,7 +442,7 @@ def play(uri, context=None):
     "next" would go to Spotify's recommendations (and the Web API's queue
     repeats the one song)."""
     if not soloist_up():
-        raise Failed(tr("spotify.soloist-isn-t-logged-in"))
+        raise Failed(tr("spotify.soloist-not-connected"))
     if not context:
         ctl("play", uri)
         return
@@ -477,9 +476,9 @@ def main():
         tell = "--notify" in args
         try:
             login()
-            done = (tr("spotify.logged-in-to-your-spotify"), tr("spotify.playlists-and-search-are-in"))
+            done = (tr("spotify.signed-in-title"), tr("spotify.signed-in-body"))
         except (Failed, NotLoggedIn) as e:
-            done = (tr("spotify.spotify-login-didn-t-finish"), str(e) or tr("spotify.spotify-said-no"))
+            done = (tr("spotify.sign-in-failed-title"), str(e) or tr("spotify.declined"))
         finally:
             if login_pid() == os.getpid():
                 os.remove(LOGIN_PID)

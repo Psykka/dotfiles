@@ -658,7 +658,7 @@ def in_thread(work, done):
 
 def spotify_error(err):
     if isinstance(err, spotify.NotLoggedIn):
-        return tr("spotify.not-logged-in-to-your")
+        return tr("spotify.not-signed-in")
     return str(err) or tr("spotify.something-went-wrong")
 
 
@@ -961,12 +961,12 @@ class Spotify(Gtk.Box):
 
         settings = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=GAP)
         settings.pack_start(spotify_head(label(tr("spotify.settings"), ["title"])), False, False, 0)
-        settings.pack_start(label(tr("spotify.two-logins-for-two-things"), ["heading"]), False, False, 0)
+        settings.pack_start(label(tr("spotify.accounts-heading"), ["heading"]), False, False, 0)
         self.player_login = SpotifyLogin("laptop", tr("spotify.login-player-title"), self.check_account)
         self.library_login = SpotifyLogin("user", tr("spotify.login-library-title"), self.library_button)
         settings.pack_start(self.player_login, False, False, 0)
         settings.pack_start(self.library_login, False, False, 0)
-        note = label(tr("spotify.spotify-keeps-them-apart-one"), ["muted", "small"], width=TEXT_W + 6)
+        note = label(tr("spotify.accounts-note"), ["muted", "small"], width=TEXT_W + 6)
         note.set_line_wrap(True)
         settings.pack_start(note, False, False, 0)
         self.version = label(css=["muted", "small"], ellipsize=True, width=TEXT_W + 6)
@@ -1189,19 +1189,19 @@ class Spotify(Gtk.Box):
         self.web, self.soloist = web, soloist
         host = GLib.get_host_name()
         if soloist:
-            self.player_login.show(tr("spotify.logged-in-plays-as", host=host), tr("spotify.spotify-s-own-player-no"),
+            self.player_login.show(tr("spotify.player-connected", host=host), tr("spotify.player-connected-detail"),
                                    ok=True)
         else:
-            self.player_login.show(tr("spotify.not-logged-in"), tr("spotify.in-the-spotify-app-devices", host=host),
-                                   tr("spotify.check-again"))
+            self.player_login.show(tr("spotify.not-connected"), tr("spotify.player-how", host=host),
+                                   tr("spotify.refresh"))
         if pending:
-            self.library_login.show(tr("spotify.waiting-for-the-browser"), tr("spotify.log-in-there-it-comes"), tr("spotify.cancel"))
+            self.library_login.show(tr("spotify.library-waiting"), tr("spotify.library-waiting-detail"), tr("spotify.cancel"))
             GLib.timeout_add(self.CHECK_MS, lambda: self.check_account() and False)
         elif web:
-            self.library_login.show(tr("spotify.logged-in"), tr("spotify.playlists-search-the-queue-and"), tr("spotify.log-out"), ok=True)
+            self.library_login.show(tr("spotify.connected"), tr("spotify.library-connected-detail"), tr("spotify.sign-out"), ok=True)
         else:
-            self.library_login.show(tr("spotify.not-logged-in"), tr("spotify.opens-the-browser-once"), tr("spotify.log-in"))
-        self.version.set_text(tr("spotify.soloist-renewed-every-week", version=version) if version else "")
+            self.library_login.show(tr("spotify.not-connected"), tr("spotify.library-how"), tr("spotify.sign-in"))
+        self.version.set_text(tr("spotify.soloist-version", version=version) if version else "")
         self.dot.set_opacity(0 if (web and soloist) else 1)
         if web is False:
             self.not_logged_in()
@@ -1222,9 +1222,9 @@ class Spotify(Gtk.Box):
         self.check_account()
 
     def not_logged_in(self):
-        ask = {"kind": "login", "title": tr("spotify.log-in-to-see-your"), "sub": tr("spotify.settings-2-see-your-library")}
+        ask = {"kind": "login", "title": tr("spotify.sign-in-to-see-library"), "sub": tr("spotify.sign-in-where")}
         for key, page in self.lists.items():
-            page.show_items([ask], tr("spotify.not-logged-in-to-your"))
+            page.show_items([ask], tr("spotify.not-signed-in"))
         self.show_liked(None)
 
     # ---------------------------------------------------------- pages and lists
@@ -1266,10 +1266,10 @@ class Spotify(Gtk.Box):
             work = spotify.queue if what == "next" else spotify.recent
             empty = tr("spotify.nothing-up-next") if what == "next" else tr("spotify.nothing-played-lately")
         elif key == "devices":
-            what, work, empty = None, self.device_rows, tr("spotify.no-devices-open-spotify-somewhere")
+            what, work, empty = None, self.device_rows, tr("spotify.no-devices")
         elif key == "detail":
             item = self.opened
-            what, work, empty = item["uri"], lambda: spotify.tracks(item), tr("spotify.nothing-in-it")
+            what, work, empty = item["uri"], lambda: spotify.tracks(item), tr("spotify.empty")
         else:
             return
         token = self.asked[key] = (what, self.asked.get(key, (None, 0))[1] + 1)
