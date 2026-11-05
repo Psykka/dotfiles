@@ -52,7 +52,8 @@
             "default": "",
             "firefox": "\ue007",
             "chromium": "",
-            "spotify": ""
+            "spotify": "",
+            "soloist": ""
         },
         "tooltip": false,
         "on-click": "~/.config/waybar/media-click.sh panel",

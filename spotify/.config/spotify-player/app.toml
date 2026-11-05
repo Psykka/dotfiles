@@ -11,8 +11,11 @@ client_id_command = { command = "secret-tool", args = ["lookup", "service", "spo
 ncspot_only_get_endpoints = []
 # Remote only: the sound comes from Spotify Soloist (soloist/), since
 # Spotify refuses librespot's audio keys on some accounts (librespot issue
-# #1649). This one keeps playlists, search and the MPRIS player for the bar.
+# #1649). This one keeps playlists and search for the bar.
 enable_streaming = "Never"
+# Its MPRIS player doesn't follow what other devices play; Soloist's comes
+# from soloist-mpris
+enable_media_control = false
 # Off: the bar already shows the track in the media island
 enable_notify = false
 

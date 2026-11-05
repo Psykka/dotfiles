@@ -1,0 +1,284 @@
+#!/usr/bin/env python3
+"""MPRIS for Spotify Soloist (soloist/ in the dotfiles), which has none of
+its own: the media island, the bar's media popup, playerctl and the media
+keys see it as the player "soloist".
+
+It follows `soloist ctl trace` (Soloist's WebSocket events, one per line,
+the full state after each change) and answers with `soloist ctl` commands.
+Runs as soloist-mpris.service, next to soloist.service.
+
+Usage: soloist-mpris
+"""
+import json
+import os
+import subprocess
+import sys
+import threading
+import time
+
+from gi.repository import Gio, GLib
+
+SOLOIST = os.path.expanduser("~/.local/bin/soloist")
+# Soloist often leaves out a track's length; spotify_player (Web API) has it
+SPOTIFY_PLAYER = os.path.expanduser("~/.local/bin/spotify_player")
+BUS_NAME = "org.mpris.MediaPlayer2.soloist"
+PATH = "/org/mpris/MediaPlayer2"
+RETRY_S = 3  # Soloist not up yet (or restarting): try again after this
+
+XML = """
+<node>
+  <interface name="org.mpris.MediaPlayer2">
+    <method name="Raise"/>
+    <method name="Quit"/>
+    <property name="CanQuit" type="b" access="read"/>
+    <property name="CanRaise" type="b" access="read"/>
+    <property name="HasTrackList" type="b" access="read"/>
+    <property name="Identity" type="s" access="read"/>
+    <property name="DesktopEntry" type="s" access="read"/>
+    <property name="SupportedUriSchemes" type="as" access="read"/>
+    <property name="SupportedMimeTypes" type="as" access="read"/>
+  </interface>
+  <interface name="org.mpris.MediaPlayer2.Player">
+    <method name="Next"/>
+    <method name="Previous"/>
+    <method name="Pause"/>
+    <method name="PlayPause"/>
+    <method name="Stop"/>
+    <method name="Play"/>
+    <method name="Seek"><arg direction="in" name="Offset" type="x"/></method>
+    <method name="SetPosition">
+      <arg direction="in" name="TrackId" type="o"/>
+      <arg direction="in" name="Position" type="x"/>
+    </method>
+    <method name="OpenUri"><arg direction="in" name="Uri" type="s"/></method>
+    <signal name="Seeked"><arg name="Position" type="x"/></signal>
+    <property name="PlaybackStatus" type="s" access="read"/>
+    <property name="LoopStatus" type="s" access="readwrite"/>
+    <property name="Rate" type="d" access="readwrite"/>
+    <property name="Shuffle" type="b" access="readwrite"/>
+    <property name="Metadata" type="a{sv}" access="read"/>
+    <property name="Volume" type="d" access="readwrite"/>
+    <property name="Position" type="x" access="read"/>
+    <property name="MinimumRate" type="d" access="read"/>
+    <property name="MaximumRate" type="d" access="read"/>
+    <property name="CanGoNext" type="b" access="read"/>
+    <property name="CanGoPrevious" type="b" access="read"/>
+    <property name="CanPlay" type="b" access="read"/>
+    <property name="CanPause" type="b" access="read"/>
+    <property name="CanSeek" type="b" access="read"/>
+    <property name="CanControl" type="b" access="read"/>
+  </interface>
+</node>
+"""
+ROOT, PLAYER = "org.mpris.MediaPlayer2", "org.mpris.MediaPlayer2.Player"
+LOOPS = {"off": "None", "context": "Playlist", "track": "Track"}
+
+
+def ctl(*args):
+    """A command to Soloist, in the background: D-Bus calls return at once."""
+    threading.Thread(target=subprocess.run, args=([SOLOIST, "ctl", *map(str, args)],),
+                     kwargs=dict(capture_output=True), daemon=True).start()
+
+
+def name(entity):
+    return ((entity or {}).get("decorations") or {}).get("identity", {}).get("name", "")
+
+
+class Player:
+    def __init__(self, bus):
+        self.bus = bus
+        self.state = {}  # Soloist's last playback_state
+        self.volume = 1.0
+        self.lengths = {}  # track uri: microseconds (None: being asked)
+        info = Gio.DBusNodeInfo.new_for_xml(XML)
+        for iface in info.interfaces:
+            bus.register_object(PATH, iface, self.call, self.get, self.set)
+
+    # ------------------------------------------------ what Soloist says
+
+    def event(self, ev):
+        kind = ev.get("type")
+        if kind == "playback_state":
+            old = self.props()
+            self.state = ev
+            self.volume = ev.get("volume", 100) / 100
+            new = self.props()
+            # A jump in the position (a seek), not just time going by
+            if old["mpris:trackid"] == new["mpris:trackid"] and ev.get("status") in ("playing", "paused"):
+                self.bus.emit_signal(None, PATH, PLAYER, "Seeked", GLib.Variant("(x)", (self.position(),)))
+            self.changed(*[k for k in ("PlaybackStatus", "Metadata", "Volume", "Shuffle", "LoopStatus",
+                                       "CanGoNext", "CanGoPrevious", "CanPlay", "CanPause", "CanSeek")])
+        elif kind == "volume_changed":
+            self.volume = ev.get("volume", 100) / 100
+            self.changed("Volume")
+        elif kind == "position_sync" and self.state:
+            self.state["position"] = ev.get("position", self.state.get("position"))
+        elif kind == "auth_state" and not ev.get("is_active"):
+            # Playing on another device (or logged out): nothing here
+            self.state = {}
+            self.changed("PlaybackStatus", "Metadata")
+
+    def props(self):
+        """The Metadata fields, as plain values (to compare before/after)."""
+        item = self.state.get("item") or {}
+        deco = item.get("decorations") or {}
+        covers = {c.get("size"): c.get("url") for c in (deco.get("visual_identity") or {}).get("cover", [])}
+        uri = item.get("uri", "")
+        return {
+            "mpris:trackid": "/org/mpris/MediaPlayer2/soloist/" + (uri.rsplit(":", 1)[-1] or "none"),
+            "xesam:title": name(item),
+            "xesam:artist": [name(c.get("entity")) for c in deco.get("creators", [])],
+            "xesam:album": name((deco.get("parent") or {}).get("entity")),
+            "mpris:artUrl": covers.get("large") or covers.get("default") or "",
+            "mpris:length": self.length(item),
+            "xesam:url": uri,
+        }
+
+    def length(self, item):
+        uri = item.get("uri", "")
+        ms = (item.get("playback") or {}).get("duration_ms")
+        if ms:
+            self.lengths[uri] = ms * 1000
+        elif uri.startswith("spotify:track:") and uri not in self.lengths:
+            self.lengths[uri] = None
+            threading.Thread(target=self.ask_length, args=(uri,), daemon=True).start()
+        return self.lengths.get(uri) or 0
+
+    def ask_length(self, uri):
+        out = subprocess.run([SPOTIFY_PLAYER, "get", "item", "track", "--id", uri.rsplit(":", 1)[-1]],
+                             capture_output=True, text=True, timeout=20).stdout
+        try:
+            d = json.loads(out)["duration"]
+            us = d["secs"] * 1_000_000 + d["nanos"] // 1000
+        except (ValueError, KeyError, TypeError):
+            return  # left as None: not asked again
+        def got():
+            self.lengths[uri] = us
+            if (self.state.get("item") or {}).get("uri") == uri:
+                self.changed("Metadata", "CanSeek")
+        GLib.idle_add(lambda: got() and False)
+
+    def position(self):
+        """Microseconds, moving on by itself while it plays."""
+        pos = self.state.get("position") or {}
+        ms = pos.get("position_ms", 0)
+        if self.state.get("status") == "playing":
+            ms += (time.time() * 1000 - pos.get("timestamp_ms", time.time() * 1000)) * pos.get("speed", 1)
+        return int(max(0, ms) * 1000)
+
+    def status(self):
+        s = self.state.get("status")
+        if not self.state.get("item"):
+            return "Stopped"
+        return "Playing" if s in ("playing", "buffering") else "Paused"
+
+    def can(self, action):
+        actions = self.state.get("available_actions")
+        # Not said: whatever has a track loaded can do it
+        if not isinstance(actions, (list, dict)):
+            return bool(self.state.get("item"))
+        return action in actions
+
+    # ------------------------------------------------ D-Bus
+
+    def value(self, iface, prop):
+        o = self.state.get("options") or {}
+        meta = self.props()
+        values = {
+            (ROOT, "CanQuit"): ("b", False), (ROOT, "CanRaise"): ("b", False),
+            (ROOT, "HasTrackList"): ("b", False), (ROOT, "Identity"): ("s", "Spotify"),
+            (ROOT, "DesktopEntry"): ("s", "spotify"),
+            (ROOT, "SupportedUriSchemes"): ("as", ["spotify"]), (ROOT, "SupportedMimeTypes"): ("as", []),
+            (PLAYER, "PlaybackStatus"): ("s", self.status()),
+            (PLAYER, "LoopStatus"): ("s", LOOPS.get(o.get("repeat"), "None")),
+            (PLAYER, "Rate"): ("d", 1.0), (PLAYER, "MinimumRate"): ("d", 1.0), (PLAYER, "MaximumRate"): ("d", 1.0),
+            (PLAYER, "Shuffle"): ("b", bool(o.get("shuffle"))),
+            (PLAYER, "Volume"): ("d", self.volume),
+            (PLAYER, "Position"): ("x", self.position()),
+            (PLAYER, "CanGoNext"): ("b", self.can("skip_next")),
+            (PLAYER, "CanGoPrevious"): ("b", self.can("skip_prev")),
+            (PLAYER, "CanPlay"): ("b", bool(self.state.get("item"))),
+            (PLAYER, "CanPause"): ("b", bool(self.state.get("item"))),
+            (PLAYER, "CanSeek"): ("b", self.can("seek")),
+            (PLAYER, "CanControl"): ("b", True),
+        }
+        if (iface, prop) == (PLAYER, "Metadata"):
+            m = {"mpris:trackid": GLib.Variant("o", meta["mpris:trackid"])}
+            for key, sig in (("xesam:title", "s"), ("xesam:artist", "as"), ("xesam:album", "s"),
+                             ("mpris:artUrl", "s"), ("mpris:length", "x"), ("xesam:url", "s")):
+                if meta[key]:
+                    m[key] = GLib.Variant(sig, meta[key])
+            return GLib.Variant("a{sv}", m if self.state.get("item") else {})
+        sig, v = values[(iface, prop)]
+        return GLib.Variant(sig, v)
+
+    def get(self, _bus, _sender, _path, iface, prop):
+        return self.value(iface, prop)
+
+    def set(self, _bus, _sender, _path, _iface, prop, value):
+        v = value.unpack()
+        if prop == "Volume":
+            ctl("volume", round(max(0.0, min(1.0, v)) * 100))
+        elif prop == "Shuffle":
+            ctl("shuffle", "on" if v else "off")
+        elif prop == "LoopStatus":
+            ctl("repeat", {"None": "off", "Playlist": "context", "Track": "track"}.get(v, "off"))
+        return True
+
+    def call(self, _bus, _sender, _path, _iface, method, args, invocation):
+        a = args.unpack()
+        if method == "PlayPause":
+            ctl("pause" if self.status() == "Playing" else "play")
+        elif method in ("Play", "Pause"):
+            ctl(method.lower())
+        elif method == "Stop":
+            ctl("pause")
+        elif method == "Next":
+            ctl("next")
+        elif method == "Previous":
+            ctl("prev")
+        elif method == "Seek":
+            ctl("seek", max(0, self.position() + a[0]) // 1000)
+        elif method == "SetPosition":
+            ctl("seek", max(0, a[1]) // 1000)
+        elif method == "OpenUri":
+            ctl("play", a[0])
+        invocation.return_value(None)
+
+    def changed(self, *props):
+        values = {p: self.value(PLAYER, p) for p in props}
+        self.bus.emit_signal(None, PATH, "org.freedesktop.DBus.Properties", "PropertiesChanged",
+                             GLib.Variant("(sa{sv}as)", (PLAYER, values, [])))
+
+
+def follow(player):
+    """Soloist's events, for as long as this runs; back after a restart."""
+    while True:
+        proc = subprocess.Popen([SOLOIST, "ctl", "trace"], stdout=subprocess.PIPE,
+                                stderr=subprocess.DEVNULL, text=True)
+        for line in proc.stdout:
+            _, _, data = line.partition(" ")
+            if data.startswith("{"):
+                try:
+                    ev = json.loads(data)
+                except ValueError:
+                    continue
+                GLib.idle_add(lambda e=ev: player.event(e) and False)
+        proc.wait()
+        # Gone (Soloist stopped): nothing playing until it's back
+        GLib.idle_add(lambda: player.event({"type": "auth_state", "is_active": False}) and False)
+        time.sleep(RETRY_S)
+
+
+def main():
+    if len(sys.argv) > 1:
+        sys.exit(__doc__.strip())
+    bus = Gio.bus_get_sync(Gio.BusType.SESSION)
+    player = Player(bus)
+    Gio.bus_own_name_on_connection(bus, BUS_NAME, Gio.BusNameOwnerFlags.NONE, None, None)
+    threading.Thread(target=follow, args=(player,), daemon=True).start()
+    GLib.MainLoop().run()
+
+
+if __name__ == "__main__":
+    main()

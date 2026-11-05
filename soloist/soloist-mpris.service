@@ -1,0 +1,13 @@
+[Unit]
+Description=MPRIS for Spotify Soloist (the bar's media island, playerctl, media keys)
+# Up and down with Soloist itself
+BindsTo=soloist.service
+After=soloist.service
+
+[Service]
+ExecStart=%h/.local/bin/soloist-mpris
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=soloist.service

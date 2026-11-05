@@ -41,18 +41,19 @@ fi
 [ "${1:-}" = --update ] && exit 0
 
 mkdir -p "$HOME/.config/systemd/user"
-cp "$here/soloist.service" "$here/soloist-update.service" "$here/soloist-update.timer" \
-    "$HOME/.config/systemd/user/"
+cp "$here/soloist.service" "$here/soloist-mpris.service" "$here/soloist-update.service" \
+    "$here/soloist-update.timer" "$HOME/.config/systemd/user/"
 # The updater runs this very script: point it at where the repo is
 sed -i "s|@INSTALLER@|$here/install-soloist.sh|" "$HOME/.config/systemd/user/soloist-update.service"
 systemctl --user daemon-reload
 systemctl --user enable --now soloist-update.timer
 
 if secret-tool lookup service soloist key api-key >/dev/null 2>&1; then
-    systemctl --user enable --now soloist.service
+    # Its MPRIS (soloist-mpris, from the bin package) comes along with it
+    systemctl --user enable --now soloist.service soloist-mpris.service
     echo "Pick \"$(hostname)\" once in the Spotify app (same network) to log it in."
 else
     echo "Missing the API key: create one at https://developer.spotify.com/dashboard/soloist, then"
     echo "  secret-tool store --label=\"Spotify Soloist API key\" service soloist key api-key"
-    echo "  systemctl --user enable --now soloist.service"
+    echo "  systemctl --user enable --now soloist.service soloist-mpris.service"
 fi
