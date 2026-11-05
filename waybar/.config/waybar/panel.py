@@ -197,6 +197,10 @@ button.tab.on { background: @bg2; color: @hi; }
 button.item { padding: 0 10px 0 4px; border-radius: 4px; }
 button.item.on .item-title { color: @accent; }
 .card { background: @bg2; border-radius: 4px; padding: 0 12px 0 4px; }
+/* A key's card: room above and below, and its field a shade darker than
+   the card, so the field (and what it says) shows as one */
+.card.key { padding: 10px 12px 10px 4px; }
+.card entry.search { background: @surface; }
 /* The Spotify client: its column of pages, the line beside it */
 button.nav { min-width: 36px; min-height: 36px; padding: 0; color: @mute; }
 button.nav.on { background: @bg2; color: @hi; }
@@ -864,10 +868,9 @@ class SpotifyKey(Gtk.Box):
     in every state."""
 
     def __init__(self, title, hint, have, save, remove, after):
-        super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=6)
-        css(self, "card")
+        super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        css(self, "card", "key")
         self.hint_text, self.have, self.save, self.remove, self.after = hint, have, save, remove, after
-        self.set_size_request(-1, 2 * ROW_H)
         names = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2, margin_start=8)
         names.pack_start(label(title, ["item-title"], ellipsize=True, width=TEXT_W - 12), False, False, 0)
         self.hint = label(css=["muted", "small"], ellipsize=True, width=TEXT_W)
