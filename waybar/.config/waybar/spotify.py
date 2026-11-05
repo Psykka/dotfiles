@@ -451,6 +451,14 @@ def play(uri, context=None):
     api("PUT", path, {"context_uri": context, "offset": {"uri": uri}})
 
 
+def skip(count):
+    """Jumps to a song further up the queue: "next" that many times, so
+    what plays around it (the album, the playlist) goes on. The Web API
+    has no way to jump straight there."""
+    for _ in range(count):
+        ctl("next")
+
+
 def transfer(device):
     """Moves the playing to another device (or back here)."""
     if device.get("here"):

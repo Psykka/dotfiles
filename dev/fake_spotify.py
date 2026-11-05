@@ -184,6 +184,11 @@ def play(uri, context=None):
     state.update(played=(context, uri), active="here")
 
 
+def skip(count):
+    wait()
+    del QUEUE[:count]
+
+
 def transfer(device):
     wait()
     state["active"] = device["id"]

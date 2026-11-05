@@ -195,7 +195,6 @@ button.tab.on { background: @bg2; color: @hi; }
 /* More room on the right: a hovered song's length doesn't touch the edge */
 button.item { padding: 0 10px 0 4px; border-radius: 4px; }
 button.item.on .item-title { color: @accent; }
-button.item.static:hover { background: transparent; color: @fg; }
 .card { background: @bg2; border-radius: 4px; padding: 0 12px 0 4px; }
 /* The Spotify client: its column of pages, the line beside it */
 button.nav { min-width: 36px; min-height: 36px; padding: 0; color: @mute; }
@@ -715,13 +714,12 @@ class SpotifyRow(Gtk.Button):
         self.icon.show(None)
         self.icon.wait(True)
 
-    def show(self, item, on=False, pickable=True):
+    def show(self, item, on=False):
         item = item or {}
         self.item = item or None
         self.text.set_visible_child_name("names")
         self.set_opacity(1 if item else 0)
         self.set_sensitive(bool(item))
-        css(self, "static", on=not pickable)
         css(self, "on", on=on)
         self.icon.show(item.get("image"), SPOTIFY_ICONS.get(item.get("kind"), "music"))
         self.title.set_text(item.get("title", ""))
@@ -735,9 +733,8 @@ class SpotifyList(Gtk.Box):
 
     ROWS = 7
 
-    def __init__(self, on_pick, pickable=True):
+    def __init__(self, on_pick):
         super().__init__(orientation=Gtk.Orientation.VERTICAL)
-        self.pickable = pickable
         self.rows = [SpotifyRow(on_pick) for _ in range(self.ROWS)]
         for r in self.rows:
             self.pack_start(r, False, False, 0)
@@ -790,8 +787,7 @@ class SpotifyList(Gtk.Box):
         shown = self.items[self.page * n:(self.page + 1) * n]
         for i, r in enumerate(self.rows):
             item = shown[i] if i < len(shown) else None
-            r.show(item, on=bool(item and self.marked and self.marked(item)),
-                   pickable=self.pickable or (item or {}).get("kind") == "login")
+            r.show(item, on=bool(item and self.marked and self.marked(item)))
         # One page: the arrows keep their room, unseen
         for w in (self.back, self.count, self.ahead):
             w.set_opacity(1 if pages > 1 else 0)
@@ -1269,8 +1265,6 @@ class Spotify(Gtk.Box):
             what = self.queue_kind.key
             work = spotify.queue if what == "next" else spotify.recent
             empty = "Nothing up next" if what == "next" else "Nothing played lately"
-            # Up next is what's coming: not something to jump to
-            page.pickable = what == "recent"
         elif key == "devices":
             what, work, empty = None, self.device_rows, "No devices: open Spotify somewhere"
         elif key == "detail":
@@ -1346,6 +1340,8 @@ class Spotify(Gtk.Box):
         kind = item.get("kind")
         if kind == "login":
             self.show_page("settings")
+        elif self.pages.get_visible_child_name() == "queue" and self.queue_kind.key == "next":
+            self.skip_to(item)
         elif kind in ("playlist", "album", "liked", "artist"):
             self.open(item)
         else:
@@ -1373,6 +1369,18 @@ class Spotify(Gtk.Box):
                 self.check_account()
             self.refresh()
         in_thread(lambda: spotify.play(uri, context), done)
+
+    def skip_to(self, item):
+        """A song up next: on to it, keeping what plays around it."""
+        page = self.lists["queue"]
+        count = page.items.index(item) + 1
+        page.say(f"Skipping to {item['title']}…")
+
+        def done(_out, err):
+            page.say(spotify_error(err) if err else "", error=bool(err))
+            self.refresh()
+            self.load("queue")
+        in_thread(lambda: spotify.skip(count), done)
 
     def transfer(self, device):
         if device.get("kind") == "login":

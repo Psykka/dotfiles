@@ -6,7 +6,9 @@ a button appears.
 Opens each popup on the running sway, goes through its steps (below), and
 prints every change in the window size with the step it came after. A
 change after a step not marked as resizing (the slide of a list opening,
-the swap to the wallpaper preview...) is a failure: exit status 1.
+the swap to the wallpaper preview...) is a failure: exit status 1. So is
+a step that checks something (it returns what's wrong: rows that don't
+answer the mouse...) and finds a problem.
 
 Usage: dev/panel-sizes.py [MODE ...]        all of them by default
        dev/panel-sizes.py --shots DIR MODE  and a screenshot after each step
@@ -166,14 +168,17 @@ def steps(mode):
             (500, "albums", lambda s: chip(s.library_kind, "albums"), False),
             (1000, "artists (none)", lambda s: chip(s.library_kind, "artists"), False),
             (1000, "playlists again", lambda s: chip(s.library_kind, "playlists"), False),
+            (1000, "library rows respond", lambda s: rows_respond(s, "library"), False),
             (1000, "open Liked Songs", lambda s: s.pick(s.lists["library"].items[0]), False),
             (1000, "its next page", lambda s: s.lists["detail"].turn(1), False),
+            (100, "its rows respond", lambda s: rows_respond(s, "detail"), False),
             (500, "play a song", lambda s: s.pick(s.lists["detail"].items[8]), False),
             (800, "play it all", lambda s: s.play_all.clicked(), False),
             (800, "back", lambda s: s.show_page(s.back_to), False),
             (800, "search", lambda s: s.show_page("search"), False),
             (500, "search words", lambda s: (s.entry.set_text("deftones"), s.search_now()), False),
             (1000, "only songs", lambda s: chip(s.search_kind, "track"), False),
+            (1000, "results respond", lambda s: rows_respond(s, "search"), False),
             (1000, "hover a song", lambda s: hover(s.lists["search"].rows[1], True), False),
             (500, "hover ends", lambda s: hover(s.lists["search"].rows[1], False), False),
             (1000, "only albums", lambda s: chip(s.search_kind, "album"), False),
@@ -182,8 +187,12 @@ def steps(mode):
             (500, "finds nothing", lambda s: (s.entry.set_text("nothing"), s.search_now()), False),
             (1000, "fails", lambda s: (s.entry.set_text("fail"), s.search_now()), False),
             (1000, "queue", lambda s: s.show_page("queue"), False),
+            (1000, "up next responds", lambda s: rows_respond(s, "queue"), False),
+            (100, "skip to a song", lambda s: s.pick(s.lists["queue"].items[2]), False),
             (1000, "recently played", lambda s: chip(s.queue_kind, "recent"), False),
-            (1000, "devices", lambda s: s.show_page("devices"), False),
+            (1000, "recent responds", lambda s: rows_respond(s, "queue"), False),
+            (100, "devices", lambda s: s.show_page("devices"), False),
+            (1000, "devices respond", lambda s: rows_respond(s, "devices"), False),
             (1000, "move to the phone", lambda s: s.transfer(s.lists["devices"].items[1]), False),
             (1500, "like the song", lambda s: s.toggle_liked(), False),
             (800, "shuffle", lambda s: s.toggle_shuffle(), False),
@@ -313,6 +322,32 @@ def stop_fake_player():
         fake.pop().terminate()
 
 
+def rows_respond(client, key):
+    """Problems with a Spotify list's rows: each showing something must be
+    clickable and change its background under the mouse (a row without
+    hover reads as broken, as the queue's once did)."""
+    from gi.repository import Gtk
+    page = client.lists[key]
+    shown = [r for r in page.rows if r.item]
+    if not shown:
+        return [f"{key}: no rows to try"]
+    bad = []
+    for i, r in enumerate(shown):
+        # The style as it would be under the mouse (the context's own state,
+        # set and put back: the widget's flags aren't restyled at once)
+        ctx = r.get_style_context()
+        normal = ctx.get_property("background-color", ctx.get_state())
+        ctx.save()
+        ctx.set_state(ctx.get_state() | Gtk.StateFlags.PRELIGHT)
+        hover = ctx.get_property("background-color", ctx.get_state())
+        ctx.restore()
+        if not r.get_sensitive():
+            bad.append(f"{key}: row {i + 1} ({r.item.get('title')!r}) can't be clicked")
+        elif normal.to_string() == hover.to_string():
+            bad.append(f"{key}: row {i + 1} ({r.item.get('title')!r}) has no hover")
+    return bad
+
+
 def fake_spotify():
     import fake_spotify
     return fake_spotify
@@ -386,9 +421,14 @@ def run(mode, shots):
             state["size"] = size
         return True
 
+    problems = []
+
     def do(name, action, allowed):
         state["step"], state["allowed"] = name, allowed
-        action(found["panel"].content)
+        out = action(found["panel"].content)
+        # A check: a list of what's wrong (empty: all good)
+        if isinstance(out, list):
+            problems.extend(f"{name}: {p}" for p in out)
         if shots:
             GLib.timeout_add(400, lambda: subprocess.run(
                 ["grim", os.path.join(shots, f"{mode}-{name.replace(' ', '-')}.png")]) and False)
@@ -413,9 +453,13 @@ def run(mode, shots):
     for step, (before, after, frames, allowed) in changes.items():
         how = "animated" if allowed else "UNEXPECTED"
         print(f"  {step:28} {wh(before)} -> {wh(after)}  ({frames} frame{'s' if frames != 1 else ''}, {how})")
+    for p in problems:
+        print(f"  {p}")
     bad = [step for step, c in changes.items() if not c[3]]
-    if bad:
-        print(f"{mode}: FAIL, changed size after: " + ", ".join(bad))
+    if bad or problems:
+        why = ["changed size after: " + ", ".join(bad)] if bad else []
+        why += [f"{len(problems)} check{'s' if len(problems) != 1 else ''} failed"] if problems else []
+        print(f"{mode}: FAIL, " + "; ".join(why))
         return 1
     print(f"{mode}: ok, {state['size'][0]}x{state['size'][1]}")
     return 0
