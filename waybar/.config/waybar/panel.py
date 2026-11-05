@@ -899,7 +899,8 @@ class Updates(Gtk.Box):
             card.pack_start(label(ICON["upgrade"], ["icon"], xalign=0.5, width=2), False, False, 0)
             names = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
             names.pack_start(label(f"Fedora {release} is available", ["title"]), False, False, 0)
-            names.pack_start(label("Upgrade the whole system, then reboot", ["muted", "small"]), False, False, 0)
+            # It runs the package update first (updates.py), so this one is enough
+            names.pack_start(label("Updates the packages too, then reboots", ["muted", "small"]), False, False, 0)
             card.pack_start(names, True, True, 0)
             up = Gtk.Button(label="Upgrade")
             up.get_style_context().add_class("yes")
@@ -931,8 +932,10 @@ class Updates(Gtk.Box):
         later.connect("clicked", lambda _: self.close_panel())
         buttons.pack_start(later, True, True, 0)
         if packages:
-            now = Gtk.Button(label="Update now")
-            now.get_style_context().add_class("yes")
+            now = Gtk.Button(label="Update packages")
+            # With a new release, its Upgrade is the one to press
+            if not release:
+                now.get_style_context().add_class("yes")
             now.connect("clicked", lambda _: self.start("packages"))
             buttons.pack_start(now, True, True, 0)
         self.pack_start(buttons, False, False, 0)

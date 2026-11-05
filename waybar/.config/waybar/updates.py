@@ -140,9 +140,9 @@ def bar():
         # Kept as a hidden island (style.css), so it can slide away
         print(json.dumps({"text": " ", "class": "none"}))
         return
-    text = f"{ICON} {count}" if count else ICON
-    if data["release"]:
-        text += "  •"  # a dot: a new release is out
+    # A new release is out: a small dot on the cube's corner, like a badge
+    dot = "<span font_size='7pt' rise='5pt'>●</span>" if data["release"] else ""
+    text = f"{ICON}{dot} {count}" if count else ICON + dot
     print(json.dumps({"text": text, "class": "release" if data["release"] else "updates"}))
 
 
