@@ -192,7 +192,8 @@ button.tab.on { background: @bg2; color: @hi; }
 /* A tab's mark that something waits there (a login): always in its place */
 .tab-dot { color: @accent; font-size: 8px; }
 /* Spotify's lists in the media popup: rows of one height */
-button.item { padding: 0 8px; border-radius: 4px; }
+/* More room on the right: a hovered song's length doesn't touch the edge */
+button.item { padding: 0 10px 0 4px; border-radius: 4px; }
 button.item.on .item-title { color: @accent; }
 button.item.static:hover { background: transparent; color: @fg; }
 .card { background: @bg2; border-radius: 4px; padding: 0 12px 0 4px; }
@@ -672,10 +673,6 @@ ROW_H = 40
 PIC = 32
 HEAD_H = 30
 CHIP_H = 26  # the filters, the search box and the buttons beside them
-# A row's padding (its hover has room around the length on the right):
-# the header, the line under a list and the player are set in as much,
-# so everything lines up on one edge
-INSET = 8
 TEXT_W = 38  # a row's title, in characters: the client's width comes from it
 
 
@@ -744,7 +741,7 @@ class SpotifyList(Gtk.Box):
         self.rows = [SpotifyRow(on_pick) for _ in range(self.ROWS)]
         for r in self.rows:
             self.pack_start(r, False, False, 0)
-        foot = Gtk.Box(spacing=2, margin_start=INSET, margin_end=INSET - 6)  # the arrows have 6px of their own
+        foot = Gtk.Box(spacing=2)
         foot.set_size_request(-1, HEAD_H)
         self.note = label(css=["muted", "small"], ellipsize=True, width=TEXT_W)
         foot.pack_start(self.note, True, True, 0)
@@ -865,7 +862,7 @@ class SpotifyLogin(Gtk.Box):
 
 def spotify_head(left, right=None):
     """A page's header: its name (or the search box) left, filters right."""
-    box = Gtk.Box(spacing=GAP, margin_start=INSET, margin_end=INSET)
+    box = Gtk.Box(spacing=GAP)
     box.set_size_request(-1, HEAD_H)
     left.set_valign(Gtk.Align.CENTER)
     box.pack_start(left, True, True, 0)
@@ -967,20 +964,17 @@ class Spotify(Gtk.Box):
 
         settings = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=GAP)
         settings.pack_start(spotify_head(label("Settings", ["title"])), False, False, 0)
-        # The rest set in like the rows' contents
-        inner = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=GAP, margin_start=INSET, margin_end=INSET)
-        settings.pack_start(inner, True, True, 0)
-        inner.pack_start(label("TWO LOGINS, FOR TWO THINGS", ["heading"]), False, False, 0)
+        settings.pack_start(label("TWO LOGINS, FOR TWO THINGS", ["heading"]), False, False, 0)
         self.player_login = SpotifyLogin("laptop", "1 · Play on this computer", self.check_account)
         self.library_login = SpotifyLogin("user", "2 · See your library", self.library_button)
-        inner.pack_start(self.player_login, False, False, 0)
-        inner.pack_start(self.library_login, False, False, 0)
+        settings.pack_start(self.player_login, False, False, 0)
+        settings.pack_start(self.library_login, False, False, 0)
         note = label("Spotify keeps them apart: one makes this computer a speaker (Soloist), "
                      "the other lets this window read your library.", ["muted", "small"], width=TEXT_W + 6)
         note.set_line_wrap(True)
-        inner.pack_start(note, False, False, 0)
+        settings.pack_start(note, False, False, 0)
         self.version = label(css=["muted", "small"], ellipsize=True, width=TEXT_W + 6)
-        inner.pack_end(self.version, False, False, 0)
+        settings.pack_end(self.version, False, False, 0)
         self.pages.add_named(settings, "settings")
 
         main.pack_start(self.pages, True, True, 0)
@@ -1006,7 +1000,7 @@ class Spotify(Gtk.Box):
     # ---------------------------------------------------------- the player
 
     def player(self):
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6, margin_start=INSET, margin_end=INSET)
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
         top = Gtk.Box(spacing=GAP)
         self.cover = Cover(PIC + 8)
         top.pack_start(self.cover, False, False, 0)
