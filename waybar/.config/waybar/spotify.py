@@ -21,6 +21,7 @@ import html
 import http.server
 import json
 import os
+import re
 import secrets
 import shutil
 import subprocess
@@ -76,6 +77,56 @@ def store(key, value, label):
 
 def client_id():
     return secret("client-id")
+
+
+# ------------------------------------------------------------ the two keys
+
+CLIENT_ID = re.compile(r"^[0-9A-Za-z]{32}$")
+SOLOIST_START_S = 6  # how long Soloist gets to come up with a new key
+
+
+def soloist_key_set():
+    out = subprocess.run(["secret-tool", "lookup", "service", "soloist", "key", "api-key"],
+                         capture_output=True, text=True)
+    return bool(out.stdout.strip())
+
+
+def set_soloist_key(key):
+    """Keeps Soloist's API key and restarts it with it: Failed if it
+    doesn't come up (a wrong key)."""
+    subprocess.run(["secret-tool", "store", "--label", tr("spotify.soloist-key-label"),
+                    "service", "soloist", "key", "api-key"], input=key.strip(), text=True, check=True)
+    subprocess.run(["systemctl", "--user", "restart", "soloist.service"], capture_output=True)
+    deadline = time.monotonic() + SOLOIST_START_S
+    while time.monotonic() < deadline:
+        time.sleep(0.5)
+        try:
+            if "running" in ctl("status"):
+                return
+        except (Failed, OSError, subprocess.TimeoutExpired):
+            pass
+    raise Failed(tr("spotify.soloist-key-refused"))
+
+
+def remove_soloist_key():
+    subprocess.run(["secret-tool", "clear", "service", "soloist", "key", "api-key"])
+    subprocess.run(["systemctl", "--user", "stop", "soloist.service"], capture_output=True)
+
+
+def set_client_id(cid):
+    """Keeps the app's client ID; another app than before: the library's
+    sign-in (that app's) goes."""
+    cid = cid.strip()
+    if not CLIENT_ID.match(cid):
+        raise Failed(tr("spotify.client-id-invalid"))
+    if cid != client_id():
+        logout()
+    store("client-id", cid, tr("spotify.client-id-label"))
+
+
+def remove_client_id():
+    subprocess.run(["secret-tool", "clear", "service", "spotify", "key", "client-id"])
+    logout()
 
 
 def available():

@@ -857,6 +857,67 @@ class SpotifyLogin(Gtk.Box):
         self.button.set_sensitive(bool(button))
 
 
+class SpotifyKey(Gtk.Box):
+    """A key kept in the keyring, as a card: its name, where it comes from
+    (or what went wrong), and a field that hides what's pasted, with Save;
+    once kept, the field says so and the button removes it. The same size
+    in every state."""
+
+    def __init__(self, title, hint, have, save, remove, after):
+        super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        css(self, "card")
+        self.hint_text, self.have, self.save, self.remove, self.after = hint, have, save, remove, after
+        self.set_size_request(-1, 2 * ROW_H)
+        names = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2, margin_start=8)
+        names.pack_start(label(title, ["item-title"], ellipsize=True, width=TEXT_W - 12), False, False, 0)
+        self.hint = label(css=["muted", "small"], ellipsize=True, width=TEXT_W)
+        names.pack_start(self.hint, False, False, 0)
+        self.pack_start(names, False, False, 0)
+        row = Gtk.Box(spacing=8, margin_start=8)
+        self.entry = css(Gtk.Entry(visibility=False, hexpand=True), "search", "in-bar")
+        self.entry.set_size_request(-1, CHIP_H)
+        self.entry.connect("activate", lambda _: self.clicked())
+        row.pack_start(self.entry, True, True, 0)
+        self.button = css(Gtk.Button(valign=Gtk.Align.CENTER), "filter")
+        self.button.set_size_request(-1, CHIP_H)
+        self.button.add(label(xalign=0.5, width=11))
+        self.button.connect("clicked", lambda _: self.clicked())
+        row.pack_start(self.button, False, False, 0)
+        self.pack_start(row, False, False, 0)
+        self.kept = False
+
+    def show(self, kept, note=None, error=False):
+        self.kept = kept
+        self.entry.set_text("")
+        self.entry.set_sensitive(not kept)
+        self.entry.set_placeholder_text(tr("spotify.key-in-keyring") if kept else tr("spotify.key-paste"))
+        self.button.get_child().set_text(tr("spotify.remove") if kept else tr("spotify.save"))
+        self.button.set_sensitive(True)
+        self.hint.set_text(note or self.hint_text)
+        self.hint.set_tooltip_text(note or self.hint_text)
+        css(self.hint, "error", on=error)
+        css(self.hint, "muted", on=not error)
+
+    def refresh(self):
+        in_thread(self.have, lambda kept, _err: self.show(bool(kept)))
+
+    def clicked(self):
+        value = self.entry.get_text().strip()
+        if not self.kept and not value:
+            return
+        work = self.remove if self.kept else (lambda: self.save(value))
+        self.button.set_sensitive(False)
+        self.hint.set_text(tr("spotify.checking"))
+
+        def done(_out, err):
+            kept = bool(self.have())
+            self.show(kept, spotify_error(err) if err else None, error=bool(err))
+            if err and not kept:
+                self.entry.set_text(value)
+            self.after()
+        in_thread(work, done)
+
+
 def spotify_head(left, right=None):
     """A page's header: its name (or the search box) left, filters right."""
     box = Gtk.Box(spacing=GAP)
@@ -959,18 +1020,43 @@ class Spotify(Gtk.Box):
         self.add_page("devices", label(tr("spotify.devices"), ["title"]), None, pick=self.transfer)
         self.lists["devices"].mark(lambda d: d.get("active"))
 
+        # Settings: the two sign-ins, or the two keys behind them (in the
+        # keyring), in one room
         settings = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=GAP)
-        settings.pack_start(spotify_head(label(tr("spotify.settings"), ["title"])), False, False, 0)
-        settings.pack_start(label(tr("spotify.accounts-heading"), ["heading"]), False, False, 0)
+        self.settings_room = Gtk.Stack(homogeneous=True, transition_type=Gtk.StackTransitionType.CROSSFADE,
+                                       transition_duration=120)
+        self.settings_kind = Chips((("sign-ins", tr("spotify.settings-sign-ins")), ("keys", tr("spotify.settings-keys"))),
+                                   lambda k: self.show_settings(k))
+        settings.pack_start(spotify_head(label(tr("spotify.settings"), ["title"]), self.settings_kind), False, False, 0)
+        settings.pack_start(self.settings_room, True, True, 0)
+
+        sign_ins = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=GAP)
+        sign_ins.pack_start(label(tr("spotify.accounts-heading"), ["heading"]), False, False, 0)
         self.player_login = SpotifyLogin("laptop", tr("spotify.login-player-title"), self.check_account)
         self.library_login = SpotifyLogin("user", tr("spotify.login-library-title"), self.library_button)
-        settings.pack_start(self.player_login, False, False, 0)
-        settings.pack_start(self.library_login, False, False, 0)
+        sign_ins.pack_start(self.player_login, False, False, 0)
+        sign_ins.pack_start(self.library_login, False, False, 0)
         note = label(tr("spotify.accounts-note"), ["muted", "small"], width=TEXT_W + 6)
         note.set_line_wrap(True)
-        settings.pack_start(note, False, False, 0)
+        sign_ins.pack_start(note, False, False, 0)
         self.version = label(css=["muted", "small"], ellipsize=True, width=TEXT_W + 6)
-        settings.pack_end(self.version, False, False, 0)
+        sign_ins.pack_end(self.version, False, False, 0)
+        self.settings_room.add_named(sign_ins, "sign-ins")
+
+        keys = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=GAP)
+        keys.pack_start(label(tr("spotify.keys-heading"), ["heading"]), False, False, 0)
+        self.soloist_key = SpotifyKey(tr("spotify.soloist-key-title"), tr("spotify.soloist-key-hint"),
+                                      spotify.soloist_key_set, spotify.set_soloist_key, spotify.remove_soloist_key,
+                                      self.check_account)
+        self.client_key = SpotifyKey(tr("spotify.client-id-title"), tr("spotify.client-id-hint"),
+                                     spotify.client_id, spotify.set_client_id, spotify.remove_client_id,
+                                     self.check_account)
+        keys.pack_start(self.soloist_key, False, False, 0)
+        keys.pack_start(self.client_key, False, False, 0)
+        keys_note = label(tr("spotify.keys-note"), ["muted", "small"], width=TEXT_W + 6)
+        keys_note.set_line_wrap(True)
+        keys.pack_start(keys_note, False, False, 0)
+        self.settings_room.add_named(keys, "keys")
         self.pages.add_named(settings, "settings")
 
         main.pack_start(self.pages, True, True, 0)
@@ -1212,6 +1298,12 @@ class Spotify(Gtk.Box):
             self.load(self.pages.get_visible_child_name())
             self.song_changed(self.song)
 
+    def show_settings(self, kind):
+        self.settings_room.set_visible_child_name(kind)
+        if kind == "keys":
+            self.soloist_key.refresh()
+            self.client_key.refresh()
+
     def library_button(self):
         if spotify.login_pending():
             spotify.cancel_login()
@@ -1243,6 +1335,7 @@ class Spotify(Gtk.Box):
             self.load(key)
         if key == "settings":
             self.check_account()
+            self.show_settings(self.settings_kind.key)
 
     def load(self, key):
         """Fills a list in the background; a newer load wins."""

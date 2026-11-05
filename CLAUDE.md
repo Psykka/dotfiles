@@ -20,6 +20,11 @@ Stow package linked into `~` (`install.sh`); `dev/` is not one.
 
 ## Texts in one place
 
+**Every new label, button, message or menu entry goes into
+`waybar/.config/waybar/texts/en.ini`, in English, never written in the
+code** (Python: `tr("section.key")`; shell: `text section.key`). Before
+finishing, run `dev/texts-check.py`.
+
 Every word the bar, its popups, menus and notifications show lives in
 `waybar/.config/waybar/texts/en.ini`, by area (`[spotify]`, `[vpn]`,
 `[menu]`, `[keys]`...): Python reads it with `tr("section.key", name=value)`

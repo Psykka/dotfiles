@@ -36,7 +36,8 @@ class Failed(Exception):
     pass
 
 
-state = {"web": True, "soloist": True, "pending": False, "active": "here", "played": None, "liked": set()}
+state = {"web": True, "soloist": True, "pending": False, "active": "here", "played": None, "liked": set(),
+         "soloist_key": True, "client_id": "e" * 32}
 PLAYLISTS = ([dict(kind="liked", uri="spotify:user:me:collection", title="Liked Songs", sub="372 songs", image=None)]
              + [dict(kind="playlist", uri=f"spotify:playlist:p{i}", title=f"Playlist {i}", sub=f"Me, {i * 7} songs",
                      image=pic(i)) for i in range(1, 15)]
@@ -161,6 +162,36 @@ def liked(uri):
 def set_liked(uri, on):
     wait()
     (state["liked"].add if on else state["liked"].discard)(uri)
+
+
+def soloist_key_set():
+    return state["soloist_key"]
+
+
+def set_soloist_key(key):
+    wait()
+    if key == "bad":
+        raise Failed("Spotify Soloist didn't start with this key")
+    state["soloist_key"] = True
+
+
+def remove_soloist_key():
+    state["soloist_key"] = False
+
+
+def client_id():
+    return state["client_id"]
+
+
+def set_client_id(cid):
+    wait()
+    if len(cid) != 32:
+        raise Failed("Not a client ID: it has 32 letters and digits")
+    state["client_id"] = cid
+
+
+def remove_client_id():
+    state["client_id"] = None
 
 
 def soloist_version():
