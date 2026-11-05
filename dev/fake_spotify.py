@@ -119,7 +119,7 @@ def search(words, kind=None):
         return ALBUMS[:3]
     out = [dict(kind="artist", uri="spotify:artist:a", title=words.title(), sub="Artist", image=pic(1))]
     out += [dict(kind="track", uri=f"spotify:track:s{i}", title=f"{words} song {i}", sub="Some Artist, Another",
-                 image=pic(i), context="spotify:album:b") for i in range(1, 11)]
+                 image=pic(i), context="spotify:album:b", length=150000 + i * 17000) for i in range(1, 11)]
     out += [dict(kind="album", uri="spotify:album:b", title=f"{words} (deluxe edition, remastered, with bonus tracks)",
                  sub="Album · Some Artist", image=pic(2))]
     return [r for r in out if not kind or r["kind"] == kind]

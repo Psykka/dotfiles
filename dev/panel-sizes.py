@@ -156,6 +156,10 @@ def steps(mode):
         # pretend player for its player
         def chip(chips, key):
             chips.pick(key)
+
+        def hover(widget, on):
+            from gi.repository import Gtk
+            (widget.set_state_flags if on else widget.unset_state_flags)(Gtk.StateFlags.PRELIGHT, *([False] if on else []))
         return [
             (0, "a player starts", lambda _: start_fake_player(), False),
             (1500, "playlists next page", lambda s: s.lists["library"].turn(1), False),
@@ -170,6 +174,8 @@ def steps(mode):
             (800, "search", lambda s: s.show_page("search"), False),
             (500, "search words", lambda s: (s.entry.set_text("deftones"), s.search_now()), False),
             (1000, "only songs", lambda s: chip(s.search_kind, "track"), False),
+            (1000, "hover a song", lambda s: hover(s.lists["search"].rows[1], True), False),
+            (500, "hover ends", lambda s: hover(s.lists["search"].rows[1], False), False),
             (1000, "only albums", lambda s: chip(s.search_kind, "album"), False),
             (1000, "open an album", lambda s: s.pick(s.lists["search"].items[0]), False),
             (1000, "back to search", lambda s: s.show_page(s.back_to), False),
