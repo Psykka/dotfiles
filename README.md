@@ -18,7 +18,7 @@ git clone git@github.com:Psykka/dotfiles.git ~/dotfiles
 `install.sh` installs the packages, applies the color theme and links the
 configs with GNU Stow. Anything already in the way is moved to
 `~/.dotfiles-backup/<date>`. It also sets up the login screen (greetd +
-tuigreet), nnn and imv as the default file manager and image viewer,
+tuigreet in cage), nnn and imv as the default file manager and image viewer,
 Spotify (Soloist) and VSCode's keyring. Log out and pick Sway at the login screen.
 
 On Fedora, SwayFX comes from its COPR; on Arch, from the AUR (with paru or

@@ -1,0 +1,19 @@
+#!/bin/sh
+# Shows the login screen: the greeter (tuigreet, its arguments are ours) in
+# a terminal inside cage. The plain console takes the size of the smallest
+# screen on every screen (a laptop at 1080p next to a 900p monitor gets
+# 1600x900 on both); cage gives the terminal the screen's own size.
+# Installed to /usr/local/bin; greetd's default_session command.
+
+# Same keyboard as the console, so the password is typed the same way
+# (cage reads the layout from XKB_DEFAULT_*)
+if [ -r /etc/vconsole.conf ]; then
+    layout=$(sed -n 's/^XKBLAYOUT=//p' /etc/vconsole.conf)
+    variant=$(sed -n 's/^XKBVARIANT=//p' /etc/vconsole.conf)
+    [ -n "$layout" ] && export XKB_DEFAULT_LAYOUT="$layout"
+    [ -n "$variant" ] && export XKB_DEFAULT_VARIANT="$variant"
+fi
+
+# -s keeps Ctrl+Alt+F<n> working; -m last puts the one window on one
+# screen, since cage's default stretches it across all of them
+exec cage -s -m last -- alacritty --config-file /etc/greetd/alacritty.toml -e "$@"
