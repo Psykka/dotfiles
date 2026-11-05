@@ -105,7 +105,8 @@ the same colors.
 | `Super + 1`…`6`, `Super + Shift + 1`…`6` | Go to workspace, move the window there |
 | `Super + scroll` | Previous / next workspace |
 | `Super + =`, `Super + -` | Volume up, down |
-| `Super + F` | Toggle floating |
+| `Super + F` | Toggle fullscreen |
+| `Super + T` | Toggle floating |
 | `Super + Shift + Q` | Close window |
 | `Super + L` | Lock |
 | `Super + Shift + R` | Reload sway |

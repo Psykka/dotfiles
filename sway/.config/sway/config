@@ -47,9 +47,12 @@ bindsym $mod+minus exec ~/.config/sway/volume.sh down
 # Close window
 bindsym $mod+Shift+q kill
 
-# Floating windows: Super+F toggles; Super + left drag moves,
-# Super + right drag resizes
-bindsym $mod+f floating toggle
+# Super+F fills the screen (no bar, no gaps); again to go back
+bindsym $mod+f fullscreen toggle
+
+# Floating windows: Super+T toggles tiling/floating; Super + left drag
+# moves, Super + right drag resizes
+bindsym $mod+t floating toggle
 floating_modifier $mod normal
 
 # Workspaces: go to / move window. Each display has its own 1..6

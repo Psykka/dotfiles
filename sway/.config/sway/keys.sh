@@ -35,6 +35,7 @@ sel=$(awk '
         if (cmd ~ /(^| )lock$/)                       return T["keys.lock-screen"]
         if (cmd == "kill")                            return T["keys.close-window"]
         if (cmd == "floating toggle")                 return T["keys.toggle-floating"]
+        if (cmd == "fullscreen toggle")               return T["keys.toggle-fullscreen"]
         if (cmd ~ /workspaces\.py prev$/)           return T["keys.previous-workspace"]
         if (cmd ~ /workspaces\.py next$/)           return T["keys.next-workspace"]
         if (cmd ~ /^move container to output left/)  return T["keys.window-to-left"]
