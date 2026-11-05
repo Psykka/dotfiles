@@ -1058,7 +1058,7 @@ class SpotifyBrowser(Gtk.Box):
             page.say(spotify_error(err) if err else f"Playing {item['title']}", error=bool(err))
             if err and not self.soloist:
                 self.check_account()
-        in_thread(lambda: spotify.play(item["uri"]), done)
+        in_thread(lambda: spotify.play(item["uri"], item.get("context")), done)
 
     def transfer(self, device):
         if device.get("kind") == "login":

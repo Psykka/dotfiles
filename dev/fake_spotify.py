@@ -117,7 +117,7 @@ def search(words):
         return []
     out = [dict(kind="artist", uri="spotify:artist:a", title=words.title(), sub="Artist", image=pic(1))]
     out += [dict(kind="track", uri=f"spotify:track:s{i}", title=f"{words} song {i}", sub="Some Artist, Another",
-                 image=pic(i)) for i in range(1, 11)]
+                 image=pic(i), context="spotify:album:b") for i in range(1, 11)]
     out += [dict(kind="album", uri="spotify:album:b", title=f"{words} (deluxe edition, remastered, with bonus tracks)",
                  sub="Album · Some Artist", image=pic(2))]
     return out
@@ -133,11 +133,11 @@ def devices():
     return [dict(d, active=d["id"] == state["active"]) for d in DEVICES]
 
 
-def play(uri):
+def play(uri, context=None):
     wait()
     if not state["soloist"]:
         raise Failed("Soloist isn't logged in: pick this computer once in the Spotify app")
-    state.update(played=uri, active="here")
+    state.update(played=(context, uri), active="here")
 
 
 def transfer(device):

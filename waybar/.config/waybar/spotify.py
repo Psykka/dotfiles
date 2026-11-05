@@ -246,8 +246,11 @@ def names(people):
     return ", ".join(p.get("name", "") for p in people or [] if p)
 
 
-def row(kind, uri, title, sub, images=None):
-    return {"kind": kind, "uri": uri, "title": title or "", "sub": sub or "", "image": picture(images)}
+def row(kind, uri, title, sub, images=None, context=None):
+    """context: what a song plays in (its album), so "next" goes on
+    through it instead of Spotify's recommendations."""
+    return {"kind": kind, "uri": uri, "title": title or "", "sub": sub or "", "image": picture(images),
+            "context": context}
 
 
 def picture(images):
@@ -285,8 +288,8 @@ def search(words):
     r = api("GET", "search?" + q)
     items = lambda k: [x for x in (r.get(k) or {}).get("items") or [] if x]
     out = [row("artist", a["uri"], a.get("name"), "Artist", a.get("images")) for a in items("artists")[:1]]
-    out += [row("track", t["uri"], t.get("name"), names(t.get("artists")), (t.get("album") or {}).get("images"))
-            for t in items("tracks")]
+    out += [row("track", t["uri"], t.get("name"), names(t.get("artists")), (t.get("album") or {}).get("images"),
+                (t.get("album") or {}).get("uri")) for t in items("tracks")]
     out += [row("album", a["uri"], a.get("name"), "Album · " + names(a.get("artists")), a.get("images"))
             for a in items("albums")[:4]]
     out += [row("playlist", p["uri"], p.get("name"), "Playlist · " + ((p.get("owner") or {}).get("display_name") or ""),
@@ -332,11 +335,22 @@ def soloist_up():
         return False
 
 
-def play(uri):
-    """Plays here, on Soloist (it takes over from another device)."""
+def play(uri, context=None):
+    """Plays here, on Soloist (it takes over from another device). A song
+    with a context starts its album there, as the Spotify app does: alone,
+    "next" would go to Spotify's recommendations (and the Web API's queue
+    repeats the one song)."""
     if not soloist_up():
         raise Failed("Soloist isn't logged in: pick this computer once in the Spotify app")
-    ctl("play", uri)
+    if not context:
+        ctl("play", uri)
+        return
+    try:
+        here = open(SOLOIST_ID).read().strip()
+    except OSError:
+        here = None
+    path = "me/player/play" + (f"?device_id={here}" if here else "")
+    api("PUT", path, {"context_uri": context, "offset": {"uri": uri}})
 
 
 def transfer(device):
