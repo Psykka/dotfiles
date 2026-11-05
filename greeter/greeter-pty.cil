@@ -1,0 +1,7 @@
+; SELinux (Fedora): the greeter runs as xdm_t, which may not open
+; /dev/ptmx, so the login screen's terminal (login-screen) couldn't get a pty for
+; tuigreet and closed at once. Let it open one and use the pts it gets.
+; Installed by install-greeter.sh with semodule.
+(allow xdm_t ptmx_t (chr_file (open read write ioctl getattr)))
+(allow xdm_t devpts_t (dir (search getattr open read)))
+(allow xdm_t devpts_t (chr_file (open read write ioctl getattr setattr)))

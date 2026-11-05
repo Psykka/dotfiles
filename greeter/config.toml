@@ -3,7 +3,7 @@
 vt = 1
 
 # tuigreet: pick the user and the session, type the password. It runs in a
-# terminal inside cage (login-screen), whose 16 colors are the theme's
+# terminal inside a bare sway (login-screen), whose 16 colors are the theme's
 # (alacritty.toml, from install-greeter.sh), so the named colors below are
 # the palette's grays.
 # Monochrome colors; remembers the last user and each user's session;

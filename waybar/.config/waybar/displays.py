@@ -21,6 +21,9 @@ from texts import tr
 
 # Included by the sway config: same path there, so no XDG_STATE_HOME here
 CONF = os.path.expanduser("~/.local/state/sway-displays.conf")
+# The login screen shows on the main display too, but can't read ~: its own
+# copy, made writable for us by greeter/install-greeter.sh
+GREETER = "/etc/greetd/main-display"
 SCALES = [1, 1.25, 1.5, 1.75, 2]
 
 
@@ -201,6 +204,9 @@ def save(main=None):
     os.makedirs(os.path.dirname(CONF), exist_ok=True)
     with open(CONF, "w") as f:
         f.write("\n".join(lines) + "\n")
+    if main and os.access(GREETER, os.W_OK):
+        with open(GREETER, "w") as f:
+            f.write(main + "\n")
 
 
 def main():

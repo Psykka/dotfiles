@@ -1,12 +1,31 @@
 #!/bin/sh
 # Shows the login screen: the greeter (tuigreet, its arguments are ours) in
-# a terminal inside cage. The plain console takes the size of the smallest
-# screen on every screen (a laptop at 1080p next to a 900p monitor gets
-# 1600x900 on both); cage gives the terminal the screen's own size.
+# a terminal inside a bare sway. The plain console takes the size of the
+# smallest screen on every screen (a laptop at 1080p next to a 900p monitor
+# gets 1600x900 on both); sway gives the terminal the screen's own size.
 # Installed to /usr/local/bin; greetd's default_session command.
+#
+# Sway rather than cage: cage can only put the window on its "last" screen,
+# kept it there when that screen was switched off (a black screen until a
+# change of tty brought it back) and crashed on every exit. Sway knows the
+# screens by name, like the user's own config does.
+
+# Inside sway: workspace 1 first, so the terminal opens there, then the
+# terminal, and sway goes away with it
+if [ "${1-}" = --inside ]; then
+    swaymsg workspace number 1 >/dev/null
+    xargs -0 -a "$2" alacritty --config-file /etc/greetd/alacritty.toml -e
+    exec swaymsg exit
+fi
+
+dir=${XDG_RUNTIME_DIR:-$(mktemp -d)}
+args="$dir/greeter-args"
+conf="$dir/greeter-sway.conf"
+# tuigreet's arguments as they came (spaces, quotes), for the terminal
+printf '%s\0' "$@" >"$args"
 
 # Same keyboard as the console, so the password is typed the same way
-# (cage reads the layout from XKB_DEFAULT_*)
+# (sway reads the layout from XKB_DEFAULT_*)
 if [ -r /etc/vconsole.conf ]; then
     layout=$(sed -n 's/^XKBLAYOUT=//p' /etc/vconsole.conf)
     variant=$(sed -n 's/^XKBVARIANT=//p' /etc/vconsole.conf)
@@ -14,6 +33,23 @@ if [ -r /etc/vconsole.conf ]; then
     [ -n "$variant" ] && export XKB_DEFAULT_VARIANT="$variant"
 fi
 
-# -s keeps Ctrl+Alt+F<n> working; -m last puts the one window on one
-# screen, since cage's default stretches it across all of them
-exec cage -s -m last -- alacritty --config-file /etc/greetd/alacritty.toml -e "$@"
+# The other screens in the terminal's background color, not sway's gray
+bg=$(sed -n 's/^background = "\(#[0-9a-fA-F]*\)"$/\1/p' /etc/greetd/alacritty.toml | head -n 1)
+
+# The main display (the menu's Displays page) gets workspace 1 and with it
+# the greeter. The greeter can't read the user's home, so displays.py keeps
+# its name (make, model, serial, as sway names it) in
+# /etc/greetd/main-display. Not plugged in, or no file yet: sway's pick.
+main=$(head -n 1 /etc/greetd/main-display 2>/dev/null)
+
+{
+    echo "# Written by /usr/local/bin/login-screen at each login screen"
+    [ -n "$bg" ] && echo "output * bg $bg solid_color"
+    echo "default_border none"
+    echo "for_window [app_id=\"Alacritty\"] fullscreen enable"
+    [ -n "$main" ] && printf 'workspace 1 output "%s"\n' "$(printf %s "$main" | sed 's/["\\]/\\&/g')"
+    echo "exec '$0' --inside '$args'"
+} >"$conf"
+
+# Bare sway: no config but this one, so none of the user's keys or bar
+exec sway -c "$conf"
