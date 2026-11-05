@@ -1,0 +1,12 @@
+[Unit]
+Description=Keep Spotify Soloist's build from expiring
+
+[Timer]
+OnCalendar=weekly
+# Also soon after boot, in case the machine was off when it was due
+OnBootSec=10min
+Persistent=true
+RandomizedDelaySec=1h
+
+[Install]
+WantedBy=timers.target

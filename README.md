@@ -18,8 +18,8 @@ git clone git@github.com:Psykka/dotfiles.git ~/dotfiles
 `install.sh` installs the packages, applies the color theme and links the
 configs with GNU Stow. Anything already in the way is moved to
 `~/.dotfiles-backup/<date>`. It also sets up the login screen (greetd +
-tuigreet), nnn and imv as the default file manager and image viewer, and
-VSCode's keyring. Log out and pick Sway at the login screen.
+tuigreet), nnn and imv as the default file manager and image viewer,
+Spotify (Soloist + spotify_player) and VSCode's keyring. Log out and pick Sway at the login screen.
 
 On Fedora, SwayFX comes from its COPR; on Arch, from the AUR (with paru or
 yay). Debian has no SwayFX, so there it runs on plain sway, without rounded
@@ -57,6 +57,13 @@ through it is blocked, not leaked) and its own DNS; one into an office
 network only carries that network. In apps mode only apps opened from the
 VPN page (or `vpn run app`) use it. `vpn` in a terminal does the same as
 the page.
+
+**Spotify** plays with no window open: Spotify Soloist (`soloist/`,
+Spotify's own headless player, downloaded from Spotify and kept from
+expiring) is a Connect device named after the machine; pick it once in the
+Spotify app to log it in. spotify_player (`spotify-player/`, as a daemon,
+with your own Spotify app's client ID in the keyring) gives the bar the
+playlists, search and the song playing. Both need Premium.
 
 **Notifications** come from our own server (`notifications.py`, in place of
 mako): cards all the same size, a bar for the time left that stops under

@@ -1,0 +1,18 @@
+[Unit]
+Description=Spotify Soloist (headless Spotify Connect player)
+After=pipewire-pulse.service graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+# Named after the machine (%H, the hostname). The API key comes from the
+# keyring, unlocked at login. The WebSocket API (the bar's) only listens on
+# localhost, on a port of the system's choosing: soloist writes it to
+# ~/.local/share/soloist/ws.port, where `soloist ctl` and the bar read it.
+ExecStart=/bin/sh -c 'exec %h/.local/bin/soloist --device-name %H --initial-volume 100 --ws 127.0.0.1:0 --api-key "$(secret-tool lookup service soloist key api-key)"'
+Restart=on-failure
+RestartSec=5
+# 10: the build expired; soloist-update.timer brings a new one
+RestartPreventExitStatus=10
+
+[Install]
+WantedBy=graphical-session.target

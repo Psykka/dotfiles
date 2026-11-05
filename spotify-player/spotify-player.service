@@ -1,0 +1,14 @@
+[Unit]
+Description=spotify_player daemon (playlists, search and MPRIS for the bar)
+After=pipewire-pulse.service graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+# -d forks (daemonize) and leaves no pid file; systemd finds the child
+Type=forking
+ExecStart=%h/.local/bin/spotify_player -d
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=graphical-session.target

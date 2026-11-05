@@ -1,0 +1,7 @@
+[Unit]
+Description=Download the current Spotify Soloist build (they expire after 90 days)
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=@INSTALLER@ --update

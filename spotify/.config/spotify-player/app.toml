@@ -1,0 +1,18 @@
+# spotify_player (runs as a daemon, see spotify-player/): the bar's media
+# popup reads playlists and search through its CLI, which reaches the
+# daemon on client_port
+client_port = 8080
+# Our own Spotify app (the default ID is ncspot's, shared and rate limited);
+# its ID stays in the keyring, out of the repo:
+#   secret-tool store --label="spotify_player client id" service spotify-player key client-id
+client_id_command = { command = "secret-tool", args = ["lookup", "service", "spotify-player", "key", "client-id"] }
+# Playlists through our app too, not the shared ncspot ID (answers 429 too
+# often). Spotify's own playlists can't be read this way (404), but still play
+ncspot_only_get_endpoints = []
+# Remote only: the sound comes from Spotify Soloist (soloist/), since
+# Spotify refuses librespot's audio keys on some accounts (librespot issue
+# #1649). This one keeps playlists, search and the MPRIS player for the bar.
+enable_streaming = "Never"
+# Off: the bar already shows the track in the media island
+enable_notify = false
+
