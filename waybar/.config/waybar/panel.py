@@ -167,6 +167,7 @@ scale:disabled slider, scale:disabled highlight { background: transparent; }
 button.thumb { padding: 0; background: @bg2; border: 2px solid transparent; border-radius: 4px; }
 button.thumb:hover { background: @bg2; border-color: @faint; }
 button.thumb.picked { border-color: @accent; }
+button.thumb:disabled { opacity: 0.35; }
 .slot { background: @bg2; border-radius: 4px; }
 .loading { opacity: 0.4; transition: opacity 150ms; }
 .panel.slim { padding: 8px 8px 8px 16px; }
@@ -3000,6 +3001,8 @@ class Wallpapers(Gtk.Box):
         self.kept_page = 0
         self.name_draft = ""
         self.picked = None  # ("wallhaven", item) or ("local", path)
+        self.selecting = None  # "local" or "saved": picking ones to delete at once
+        self.selected = set()  # what picking them picks: ("local", path), ("saved", name)
         self.busy = None
         self.asking = None  # "save", "delete" or "name" (to keep a theme)
         self.found = []
@@ -3084,6 +3087,8 @@ class Wallpapers(Gtk.Box):
     # -------------------------------------------------------------- tabs
 
     def show_tab(self, name):
+        if self.selecting and name != {"local": "downloaded", "saved": "saved"}[self.selecting]:
+            self.stop_select()
         self.pages.set_visible_child_name(name)
         for n, b in self.tabs.items():
             css(b, "on", on=n == name)
@@ -3169,7 +3174,7 @@ class Wallpapers(Gtk.Box):
         page.pack_start(self.filter_revealer, False, False, 0)
 
         # A page is 3 rows (wallpaper.PER_PAGE): nothing to scroll
-        self.wh_grid = Gtk.Grid(row_spacing=6, column_spacing=6, halign=Gtk.Align.CENTER)
+        self.wh_grid = Gtk.Grid(row_spacing=6, column_spacing=6)
         self.wh_grid.set_size_request(-1, THUMB_H * 3 + 4 * 3 + 12)
         # Nothing found, or no connection: a small card over the grid
         self.wh_status = label(css=["muted"], xalign=0.5)
@@ -3387,7 +3392,7 @@ class Wallpapers(Gtk.Box):
         page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
         page.pack_start(label("In ~/Pictures/Wallpapers, and the ones that come with the dotfiles",
                               ["muted", "small"]), False, False, 0)
-        self.local_grid = Gtk.Grid(row_spacing=6, column_spacing=6, halign=Gtk.Align.CENTER)
+        self.local_grid = Gtk.Grid(row_spacing=6, column_spacing=6)
         self.local_grid.set_size_request(-1, THUMB_H * 3 + 4 * 3 + 12)
         self.local_grid.set_valign(Gtk.Align.START)
         page.pack_start(self.local_grid, True, True, 0)
@@ -3405,6 +3410,7 @@ class Wallpapers(Gtk.Box):
         self.local_page = max(0, min(self.local_page, pages - 1))
         shown = files[self.local_page * LOCAL_PAGE:(self.local_page + 1) * LOCAL_PAGE]
         self.fill(self.local_grid, [(str(p), ("local", str(p)), self.in_use(p)) for p in shown])
+        self.paint_selection(self.local_grid)
         self.local_pager.text.set_text(f"Page {self.local_page + 1} of {pages} · "
                                        f"{len(files)} wallpaper{'s' if len(files) != 1 else ''}")
         self.local_pager.prev.set_sensitive(self.local_page > 0)
@@ -3416,7 +3422,7 @@ class Wallpapers(Gtk.Box):
         page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
         self.kept_intro = label(css=["muted", "small"], ellipsize=True)
         page.pack_start(self.kept_intro, False, False, 0)
-        self.kept_grid = Gtk.Grid(row_spacing=6, column_spacing=6, halign=Gtk.Align.CENTER)
+        self.kept_grid = Gtk.Grid(row_spacing=6, column_spacing=6)
         # As tall as the Downloaded grid, so the tabs line up
         self.kept_grid.set_size_request(-1, THUMB_H * 3 + 4 * 3 + 12)
         self.kept_grid.set_valign(Gtk.Align.START)
@@ -3450,6 +3456,7 @@ class Wallpapers(Gtk.Box):
             css(th, "picked", on=what == self.picked)
             self.kept_grid.attach(th, i % COLUMNS, i // COLUMNS, 1, 1)
         self.kept_grid.show_all()
+        self.paint_selection(self.kept_grid)
         self.kept_intro.set_text("Wallpapers with their colors, kept to use again" if self.kept else
                                  "Nothing kept yet: “Save as…” keeps the wallpaper and colors in use")
         self.kept_pager.text.set_text(f"Page {self.kept_page + 1} of {pages} · "
@@ -3632,6 +3639,9 @@ class Wallpapers(Gtk.Box):
     # ------------------------------------------------------- the bar
 
     def pick(self, what):
+        if self.selecting:
+            self.toggle(what)
+            return
         self.picked = what
         self.asking = None
         for grid in (self.wh_grid, self.local_grid, self.kept_grid):
@@ -3680,6 +3690,23 @@ class Wallpapers(Gtk.Box):
         picked_new = self.picked and tab != "colors" and not self.showing(self.picked)
         if self.busy:
             info.set_text(self.busy)
+        elif self.asking == "delete-many":
+            n, s = len(self.selected), "s" if len(self.selected) != 1 else ""
+            if self.selecting == "saved":
+                info.set_text(f"Forget {n} saved theme{s}?")
+            else:
+                info.set_text(f"Delete {n} wallpaper{s} and their edited copies?")
+            info.get_style_context().remove_class("muted")
+            button("No", lambda: self.ask(None))
+            button("Forget" if self.selecting == "saved" else "Delete", self.delete_selected, yes=True)
+        elif self.selecting:
+            n = len(self.selected)
+            verb = "Forget" if self.selecting == "saved" else "Delete"
+            info.set_text(f"{n} selected" if n else f"Pick the ones to {verb.lower()}")
+            button("All unused", self.select_unused)
+            button("Cancel", self.stop_select)
+            button(f"{verb}…", lambda: self.ask("delete-many"), yes=True)
+            buttons[-1].set_sensitive(n > 0)
         elif self.asking == "save":
             colors = dict(self.screen[2])
             tone = wallpaper.tone_of(colors, self.base)
@@ -3756,6 +3783,11 @@ class Wallpapers(Gtk.Box):
                 self.name_draft = os.path.splitext(os.path.basename(wallpaper.original(self.saved_path)[0]))[0]
                 self.ask("name")
             button("Save as…", ask_name)
+            buttons.insert(0, buttons.pop())
+        if tab in ("downloaded", "saved") and not (self.busy or self.asking or self.selecting or self.trying()
+                                                   or self.wanted() != self.screen):
+            # Many at once: the ones not in use any more
+            button("Select…", lambda: self.start_select("saved" if tab == "saved" else "local"))
             buttons.insert(0, buttons.pop())
         for b in buttons:
             self.bar.pack_start(b, False, False, 0)
@@ -4104,6 +4136,62 @@ class Wallpapers(Gtk.Box):
         if focus:
             run("swaymsg", f"workspace {quote(focus)}")
         run("pkill", "-USR1", "-x", "waybar")  # shown again
+
+    # ------------------------------------------------- deleting many
+
+    def deletable(self, what):
+        """Not in use (nor being tried): a download, or a saved theme."""
+        kind, x = what
+        if kind == "saved":
+            t = self.kept_theme(x)
+            return bool(t) and not self.kept_in_use(t)
+        return kind == "local" and wallpaper.can_delete(x) and not self.in_use(x) and str(x) != self.source
+
+    def paint_selection(self, grid=None):
+        for g in [grid] if grid else (self.local_grid, self.kept_grid):
+            for t in g.get_children():
+                mine = self.selecting == t.what[0]
+                css(t, "picked", on=t.what in self.selected if mine else t.what == self.picked)
+                t.set_sensitive(not mine or self.deletable(t.what))
+
+    def start_select(self, kind):
+        self.selecting, self.selected = kind, set()
+        self.picked, self.asking = None, None
+        self.paint_selection()
+        self.show_bar()
+
+    def stop_select(self):
+        self.selecting, self.selected, self.asking = None, set(), None
+        self.paint_selection()
+        self.show_bar()
+
+    def toggle(self, what):
+        if what[0] == self.selecting and self.deletable(what):
+            self.selected ^= {what}
+        self.asking = None
+        self.paint_selection()
+        self.show_bar()
+
+    def select_unused(self):
+        """Every one not in use, on every page."""
+        if self.selecting == "saved":
+            every = [("saved", t["name"]) for t in self.kept]
+        else:
+            every = [("local", str(p)) for p in wallpaper.downloaded()]
+        self.selected = {w for w in every if self.deletable(w)}
+        self.paint_selection()
+        self.show_bar()
+
+    def delete_selected(self):
+        kind, n = self.selecting, len(self.selected)
+        for _, x in self.selected:
+            (wallpaper.forget if kind == "saved" else wallpaper.delete)(x)
+        self.selecting, self.selected, self.asking = None, set(), None
+        self.show_local()
+        self.show_kept()
+        self.show_bar()
+        done = f"Forgot {n} theme" if kind == "saved" else f"Deleted {n} wallpaper"
+        self.bar.get_children()[0].set_text(done + ("s" if n != 1 else ""))
 
     def delete(self):
         kind, what = self.picked

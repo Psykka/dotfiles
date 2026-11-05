@@ -297,6 +297,13 @@ def thumb(source):
     if not out.exists():
         try:
             pix = GdkPixbuf.Pixbuf.new_from_file_at_scale(str(path), 320, 320, True)
+            if pix.get_has_alpha():
+                # JPEG has no alpha (glycin won't write it): on black, as sway shows it
+                flat = GdkPixbuf.Pixbuf.new(GdkPixbuf.Colorspace.RGB, False, 8, pix.get_width(), pix.get_height())
+                flat.fill(0)
+                pix.composite(flat, 0, 0, pix.get_width(), pix.get_height(), 0, 0, 1, 1,
+                              GdkPixbuf.InterpType.BILINEAR, 255)
+                pix = flat
             pix.savev(str(out), "jpeg", ["quality"], ["88"])
         except Exception:  # GLib.Error, or a file that is not an image
             return None
