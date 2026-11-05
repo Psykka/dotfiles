@@ -56,6 +56,7 @@ ICON = {
     "warning": "\uf071", "wrench": "\uf0ad", "headphones": "\uf025",
     "mouse": "\uf8cc", "gamepad": "\uf11b", "phone": "\uf3cd", "laptop": "\uf109",
     "vpn": "\uf3ed", "trash": "\uf1f8", "camera": "\uf030", "move": "\uf0ec", "image": "\uf03e", "terminal": "\uf120",
+    "moon": "\uf186", "sun": "\uf185",
 }
 
 CSS = b"""
@@ -2988,6 +2989,7 @@ class Wallpapers(Gtk.Box):
         self.sample_notes = []  # ids of the sample notifications
         self.with_examples = True
         self.base = wallpaper.base_palette()
+        self.tones = wallpaper.tones(self.base)  # {tone: (palette, what it puts on top of base)}
         self.saved_path, self.saved_colors = wallpaper.saved()
         self.filters = dict(wallpaper.FILTERS)
         self.last_q = ""
@@ -3045,17 +3047,27 @@ class Wallpapers(Gtk.Box):
         and its colors (as saved, until a control is touched)."""
         source, self.edits = wallpaper.original(self.saved_path)
         self.source = str(source)
-        self.mode = "wallpaper" if self.saved_colors else "theme"
-        self.override = dict(self.saved_colors) if self.saved_colors else None
+        self.take_colors(self.saved_colors)
         self.style = dict(wallpaper.STYLE)
+
+    def take_colors(self, colors):
+        """Dark or light, and the theme's colors or these ones as they are
+        (until a control is touched)."""
+        self.tone = wallpaper.tone_of(colors, self.base)
+        self.mode = self.mode_of(colors)
+        self.override = dict(colors) if self.mode == "wallpaper" else None
         self.accent = None
 
+    def mode_of(self, colors):
+        return "theme" if colors == self.tones[wallpaper.tone_of(colors, self.base)][1] else "wallpaper"
+
     def colors(self):
+        palette, extra = self.tones[self.tone]
         if self.mode == "theme":
-            return {}
+            return dict(extra)
         if self.override is not None:
             return self.override
-        return wallpaper.derive(self.base, self.found, self.accent, **self.style)
+        return {**extra, **wallpaper.derive(palette, self.found, self.accent, **self.style)}
 
     def wanted(self):
         return (self.source, tuple(self.edits.values()), tuple(sorted(self.colors().items())))
@@ -3511,6 +3523,20 @@ class Wallpapers(Gtk.Box):
         self.picture_name = label(css=["muted", "small"], ellipsize=True)
         self.picture_name.set_max_width_chars(30)
         right.pack_start(self.picture_name, False, False, 0)
+        # Dark or light goes with either: the theme's grays or the wallpaper's
+        right.pack_start(label("TONE", ["heading"]), False, False, 8)
+        tones = Gtk.Box(spacing=4, homogeneous=True)
+        self.tone_buttons = {}
+        for (tone, text), icon in zip(wallpaper.TONES, ("moon", "sun")):
+            b = css(Gtk.Button(), "choice")
+            inner = Gtk.Box(spacing=8, halign=Gtk.Align.CENTER)
+            inner.pack_start(label(ICON[icon], ["icon"]), False, False, 0)
+            inner.pack_start(label(text), False, False, 0)
+            b.add(inner)
+            b.connect("clicked", lambda _, t=tone: self.set_tone(t))
+            tones.pack_start(b, True, True, 0)
+            self.tone_buttons[tone] = b
+        right.pack_start(tones, False, False, 0)
         page.pack_end(right, False, False, 0)
         return page
 
@@ -3537,17 +3563,23 @@ class Wallpapers(Gtk.Box):
             b.connect("clicked", lambda _, i=i: self.set_accent(i))
             self.accent_row.pack_start(b, False, False, 0)
         self.accent_row.show_all()
-        for chip, values in self.preset_chips:
-            d = {**self.base, **wallpaper.derive(self.base, found, self.accent, **values)}
-            chip.set_colors([d[k] for k in ("bg0", "bg2", "mute", "fg", "accent")])
+        self.paint_presets()
         self.refresh_colors()
         if then:
             then()
         return False
 
+    def paint_presets(self):
+        palette, _ = self.tones[self.tone]
+        for chip, values in self.preset_chips:
+            d = {**palette, **wallpaper.derive(palette, self.found, self.accent, **values)}
+            chip.set_colors([d[k] for k in ("bg0", "bg2", "mute", "fg", "accent")])
+
     def refresh_colors(self):
         for m, b in self.mode_buttons.items():
             css(b, "yes", on=m == self.mode)
+        for t, b in self.tone_buttons.items():
+            css(b, "yes", on=t == self.tone)
         self.tuning.set_sensitive(self.mode == "wallpaper")
         pick = self.accent if self.accent is not None else wallpaper.vivid(self.found)
         for i, b in enumerate(self.accent_row.get_children()):
@@ -3567,6 +3599,11 @@ class Wallpapers(Gtk.Box):
 
     def set_mode(self, mode):
         self.mode = mode
+        self.touched()
+
+    def set_tone(self, tone):
+        self.tone = tone
+        self.paint_presets()
         self.touched()
 
     def set_accent(self, i):
@@ -3608,7 +3645,8 @@ class Wallpapers(Gtk.Box):
             return f"{what['resolution'].replace('x', '×')} · {what['size'] / 1e6:.1f} MB · {what['category']}"
         if kind == "saved":
             t = self.kept_theme(what)
-            colors = "" if t["colors"] else " · theme colors"
+            tone = wallpaper.tone_of(t["colors"], self.base)
+            colors = f" · {tone} theme colors" if self.mode_of(t["colors"]) == "theme" else ""
             return f"{what} · {os.path.basename(t['wallpaper'])}{colors}" + (" · in use" if self.kept_in_use(t) else "")
         info = GdkPixbuf.Pixbuf.get_file_info(what)
         size = f" · {info[1]}×{info[2]}" if info and info[0] else ""
@@ -3643,7 +3681,9 @@ class Wallpapers(Gtk.Box):
         if self.busy:
             info.set_text(self.busy)
         elif self.asking == "save":
-            colors = " and these colors" if self.screen[2] else " with the theme colors"
+            colors = dict(self.screen[2])
+            tone = wallpaper.tone_of(colors, self.base)
+            colors = " and these colors" if self.mode_of(colors) == "wallpaper" else f" with the {tone} theme colors"
             info.set_text(f"Keep this wallpaper{colors}?")
             info.get_style_context().remove_class("muted")
             button("No", lambda: self.ask(None))
@@ -3791,9 +3831,7 @@ class Wallpapers(Gtk.Box):
         a control is touched), then on the desktop."""
         self.source = t["wallpaper"]
         self.edits = dict(wallpaper.EDIT)
-        self.accent = None
-        self.mode = "wallpaper" if t["colors"] else "theme"
-        self.override = dict(t["colors"]) if t["colors"] else None
+        self.take_colors(t["colors"])
         self.busy = "Reading its colors…"
         self.load_colors(then=self.apply)
 
@@ -3935,7 +3973,8 @@ class Wallpapers(Gtk.Box):
         self.slim.pack_start(self.terminal_button, False, False, 0)
         name = os.path.basename(self.source)
         name = name if len(name) <= 28 else name[:27] + "…"
-        colors = " · wallpaper colors" if self.screen[2] else " · theme colors"
+        tone = wallpaper.tone_of(dict(self.screen[2]), self.base)
+        colors = " · wallpaper colors" if self.mode_of(dict(self.screen[2])) == "wallpaper" else f" · {tone} theme colors"
         self.slim_stack = Gtk.Stack(transition_type=Gtk.StackTransitionType.CROSSFADE, transition_duration=150)
         for page, text, buttons in (
                 ("preview", f"Previewing {name}{colors}",

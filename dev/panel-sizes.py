@@ -42,13 +42,16 @@ def local_wallpaper():
 def pretend_themes(folder, picture):
     """Saved themes for the Saved tab: with colors, without, a long name,
     and more than one page of them."""
-    names = ["pretend colors", "theme colors only", "a name far too long to fit under the picture"]
+    names = ["pretend colors", "theme colors only", "light theme colors",
+             "a name far too long to fit under the picture"]
     names += [f"more {i}" for i in range(6)]
     for i, name in enumerate(names):
         d = folder / name
         d.mkdir(parents=True)
         shutil.copy2(picture, d / os.path.basename(picture))
         colors = "" if name == "theme colors only" else f"bg0=1a1420\nfg=e0d8f0\naccent=c09ae{i}\n"
+        if name == "light theme colors":
+            colors = "scheme=prefer-light\nbg0=f6f6f6\nfg=262626\nisland=f6f6f6\naccent=2b2b2b\n"
         (d / "theme.ini").write_text(f"wallpaper={d / os.path.basename(picture)}\n{colors}")
 
 
@@ -87,9 +90,13 @@ def steps(mode):
             (4000, "pick a local one again", lambda w: w.pick(("local", local)), False),
             (500, "tab Colors", lambda w: w.show_tab("colors"), False),
             (800, "colors from the wallpaper", lambda w: w.set_mode("wallpaper"), False),
+            (500, "light", lambda w: w.set_tone("light"), False),
+            (500, "light theme colors", lambda w: w.set_mode("theme"), False),
+            (500, "light from the wallpaper", lambda w: w.set_mode("wallpaper"), False),
             (500, "style Vivid", lambda w: w.set_style(dict(panel.wallpaper.PRESETS[2][1])), False),
             (500, "accent 2", lambda w: w.set_accent(2), False),
             (500, "tint", lambda w: w.tune("tint", 0.3), False),
+            (500, "dark again", lambda w: w.set_tone("dark"), False),
             (500, "tab Wallhaven", lambda w: w.show_tab("wallhaven"), False),
             (800, "try it", lambda w: w.try_picked(), False),
             (5000, "ask to save", lambda w: w.ask("save"), False),

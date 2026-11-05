@@ -1,0 +1,225 @@
+#!/usr/bin/env python3
+"""Sets the sway wallpaper with a crossfade from the one on screen.
+
+Usage: wallpaper-fade PATH [COLOR]   as `output * bg PATH fill #COLOR`
+
+sway swaps the picture at once (swaybg is restarted, so there is even a
+frame of plain color in between). Instead, a layer-shell window on the
+bottom layer (above swaybg, under the windows and the bar) shows the old
+picture first; once it is up the new one is set underneath, the window
+fades into the new picture as swaybg would draw it and goes away, so its
+last frame is what is left on screen.
+
+What is on screen is kept in $XDG_RUNTIME_DIR/wallpaper-fade; before the
+first change of a session it is the one in ~/.config/sway/colors. Without
+GTK layer shell, or with nothing to fade from, the picture is just set.
+"""
+import os
+import pathlib
+import re
+import select
+import signal
+import subprocess
+import sys
+import threading
+
+RUNTIME = pathlib.Path(os.environ.get("XDG_RUNTIME_DIR") or "/tmp")
+STATE = RUNTIME / "wallpaper-fade"
+PIDFILE = RUNTIME / "wallpaper-fade.pid"
+SWAY_COLORS = pathlib.Path.home() / ".config/sway/colors"
+
+FADE_MS = 900
+ZOOM = 0.04       # the new picture settles from this much bigger
+HOLD_MS = 500     # on the new picture, for swaybg to be drawn underneath
+
+
+def on_screen():
+    """(path, color) on screen now, as far as we know."""
+    try:
+        sock, path, color = STATE.read_text().split("\n")[:3]
+        if sock == os.environ.get("SWAYSOCK", ""):
+            return path, color
+    except (OSError, ValueError):
+        pass
+    try:
+        m = re.search(r"^output \* bg (\S+) fill #(\w+)", SWAY_COLORS.read_text(), re.M)
+        return (os.path.expanduser(m.group(1)), m.group(2)) if m else (None, None)
+    except OSError:
+        return None, None
+
+
+def set_bg(path, color):
+    subprocess.run(["swaymsg", f"output * bg {path} fill #{color}"], stdout=subprocess.DEVNULL)
+    STATE.write_text(f"{os.environ.get('SWAYSOCK', '')}\n{path}\n{color}\n")
+
+
+def main():
+    if len(sys.argv) > 1 and sys.argv[1] == "--overlay":
+        overlay(*sys.argv[2:5])
+        return
+    if len(sys.argv) not in (2, 3):
+        sys.exit(__doc__.split("\n\n")[1])
+    path = os.path.expanduser(sys.argv[1])
+    color = (sys.argv[2] if len(sys.argv) == 3 else "000000").lstrip("#")
+    old, old_color = on_screen()
+    if not old or old == path or not os.path.isfile(old) or not os.path.isfile(path):
+        set_bg(path, color)
+        return
+    # The window outlives this command: whoever called it doesn't wait for the fade
+    child = subprocess.Popen([sys.executable, __file__, "--overlay", old, path, old_color or color],
+                             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, start_new_session=True)
+    ready, _, _ = select.select([child.stdout], [], [], 3)
+    if not (ready and child.stdout.readline().strip() == b"ready"):
+        child.kill()
+    set_bg(path, color)
+
+
+def overlay(old, new, color):
+    import cairo
+    import gi
+    gi.require_version("Gtk", "3.0")
+    gi.require_version("Gdk", "3.0")
+    gi.require_version("GdkPixbuf", "2.0")
+    gi.require_version("GtkLayerShell", "0.1")
+    from gi.repository import Gdk, GdkPixbuf, GLib, Gtk, GtkLayerShell
+
+    if not GtkLayerShell.is_supported():
+        sys.exit(1)
+    bg = tuple(int(color[i:i + 2], 16) / 255 for i in (0, 2, 4)) if len(color) == 6 else (0, 0, 0)
+
+    def cover(file, w, h, scale, keep=False):
+        """The picture as swaybg's "fill" draws it: covering w×h, centered
+        (a pixbuf; surface() makes it drawable, in the main thread).
+        `keep`: it stays on screen, so the next fade starts from a copy at
+        this size (a big picture takes most of a second to read)."""
+        cache = RUNTIME / f"wallpaper-fade-{w * scale}x{h * scale}"
+        stamp = f"{file} {os.path.getmtime(file)}"
+        try:
+            head, _, data = cache.read_bytes().partition(b"\n")
+            name, pw, ph, stride, alpha = head.decode().rsplit(" ", 4)
+            if name == stamp:
+                return GdkPixbuf.Pixbuf.new_from_bytes(GLib.Bytes.new(data), GdkPixbuf.Colorspace.RGB,
+                                                       alpha == "1", 8, int(pw), int(ph), int(stride))
+        except (OSError, ValueError):
+            pass
+        _, pw, ph = GdkPixbuf.Pixbuf.get_file_info(file)
+        k = max(w * scale / pw, h * scale / ph)
+        pix = GdkPixbuf.Pixbuf.new_from_file_at_scale(file, round(pw * k), round(ph * k), False)
+        pix = pix.apply_embedded_orientation() or pix
+        if keep:
+            head = f"{stamp} {pix.get_width()} {pix.get_height()} {pix.get_rowstride()} {int(pix.get_has_alpha())}\n"
+            try:
+                cache.write_bytes(head.encode() + pix.get_pixels())
+            except OSError:
+                pass
+        return pix
+
+    def surface(pix, scale):
+        return Gdk.cairo_surface_create_from_pixbuf(pix, scale, None)
+
+    class Fade(Gtk.Window):
+        def __init__(self, monitor):
+            super().__init__()
+            GtkLayerShell.init_for_window(self)
+            GtkLayerShell.set_namespace(self, "wallpaper-fade")
+            GtkLayerShell.set_monitor(self, monitor)
+            GtkLayerShell.set_layer(self, GtkLayerShell.Layer.BOTTOM)
+            GtkLayerShell.set_exclusive_zone(self, -1)
+            for edge in (GtkLayerShell.Edge.TOP, GtkLayerShell.Edge.BOTTOM,
+                         GtkLayerShell.Edge.LEFT, GtkLayerShell.Edge.RIGHT):
+                GtkLayerShell.set_anchor(self, edge, True)
+            g, scale = monitor.get_geometry(), monitor.get_scale_factor()
+            self.size = (g.width, g.height, scale)
+            self.old = surface(cover(old, *self.size), scale)
+            self.new = None  # read while the old one is already up
+            self.t = 0.0
+            self.drawn = False
+            self.connect("draw", self.paint)
+            # Clicks go through to the desktop
+            self.connect("realize", lambda w: w.input_shape_combine_region(cairo.Region()))
+
+        def picture(self, cr, surface, zoom, alpha):
+            w, h = self.get_allocated_width(), self.get_allocated_height()
+            sw = surface.get_width() / self.get_scale_factor()
+            sh = surface.get_height() / self.get_scale_factor()
+            cr.save()
+            cr.translate(w / 2, h / 2)
+            cr.scale(zoom, zoom)
+            cr.set_source_surface(surface, -sw / 2, -sh / 2)
+            cr.paint_with_alpha(alpha)
+            cr.restore()
+
+        def paint(self, _, cr):
+            cr.set_source_rgb(*bg)
+            cr.paint()
+            self.picture(cr, self.old, 1.0, 1.0)
+            if self.t > 0:
+                # Eased fade, while the new one settles in from a little bigger
+                e = self.t * self.t * (3 - 2 * self.t)
+                self.picture(cr, self.new, 1 + ZOOM * (1 - self.t) ** 3, e)
+            self.drawn = True
+            return True
+
+    try:
+        windows = [Fade(m) for m in (Gdk.Display.get_default().get_monitor(i)
+                                     for i in range(Gdk.Display.get_default().get_n_monitors()))]
+    except GLib.Error:
+        sys.exit(1)
+    if not windows:
+        sys.exit(1)
+    for w in windows:
+        w.show_all()
+
+    def stop_previous():
+        try:
+            os.kill(int(PIDFILE.read_text()), signal.SIGTERM)
+        except (OSError, ValueError):
+            pass
+        PIDFILE.write_text(str(os.getpid()))
+
+    def load():
+        pixbufs = [cover(new, *w.size, keep=True) for w in windows]
+
+        def start():
+            for w, pix in zip(windows, pixbufs):
+                w.new = surface(pix, w.size[2])
+            windows[0].add_tick_callback(tick)
+            return False
+        GLib.idle_add(start)
+
+    def tick(widget, clock):
+        now = clock.get_frame_time() / 1000
+        start = tick.start = getattr(tick, "start", now)
+        t = min(1.0, (now - start) / FADE_MS)
+        for w in windows:
+            w.t = t
+            w.queue_draw()
+        if t < 1:
+            return True
+        GLib.timeout_add(HOLD_MS, Gtk.main_quit)
+        return False
+
+    def up():
+        # Drawn, and one more check later so the frame has reached sway
+        if not all(w.drawn for w in windows) or not getattr(up, "seen", False):
+            up.seen = all(w.drawn for w in windows)
+            return True
+        # On screen: the caller may swap the picture underneath now
+        stop_previous()
+        print("ready", flush=True)
+        threading.Thread(target=load, daemon=True).start()
+        return False
+    GLib.timeout_add(30, up)
+    # A new fade on top takes over
+    GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGTERM, lambda: Gtk.main_quit() or False)
+    GLib.timeout_add(10000, Gtk.main_quit)  # never stuck on screen
+    Gtk.main()
+    try:
+        if PIDFILE.read_text() == str(os.getpid()):
+            PIDFILE.unlink()
+    except OSError:
+        pass
+
+
+if __name__ == "__main__":
+    main()

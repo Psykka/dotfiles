@@ -5,7 +5,8 @@ Usage: theme [name]     apply a palette (default: the current one)
        theme current    print the current palette
        theme get KEY    print one value of the current palette
        theme set KEY VALUE  change one value (e.g. logo) and apply
-       theme dump [base]    the whole palette as JSON (base: without local)
+       theme dump [base [NAME]]  the whole palette as JSON (base: without
+                        local; NAME: another palette, e.g. light)
        theme local [KEY=VALUE ...]  print / change this machine's choices
                         and apply (an empty VALUE drops the key)
        theme preview KEY=VALUE ...  apply with these values, saving nothing
@@ -194,6 +195,9 @@ def render(values):
 def reload():
     for cmd in (["swaymsg", "reload"], ["pkill", "-USR2", "-x", "waybar"]):
         subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    # sway set the wallpaper itself: what wallpaper-fade knows is on screen is
+    # no longer so (it reads ~/.config/sway/colors without it)
+    (pathlib.Path(os.environ.get("XDG_RUNTIME_DIR") or "/tmp") / "wallpaper-fade").unlink(missing_ok=True)
 
 
 SWAY_COLORS = ("sway/.config/sway/colors", "sway/.config/sway/fx.d/effects")
@@ -209,14 +213,26 @@ def sway_lines():
 
 def reload_colors(before):
     """Just the colors, without a blink. `before`: sway_lines() from before
-    rendering; the wallpaper is set again only if it changed."""
-    commands = [l for l in sorted(sway_lines()) if l.startswith(("client.", "shadow_color"))
-                or (l.startswith("output ") and l not in before)]
+    rendering; the wallpaper (with a crossfade) and the GTK light or dark are
+    set again only if they changed."""
+    lines = sorted(sway_lines())
+    commands = [l for l in lines if l.startswith(("client.", "shadow_color"))
+                or (l.startswith("exec_always gsettings") and l not in before)]
     if commands:
         subprocess.run(["swaymsg", "; ".join(commands)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    for line in lines:
+        # output * bg PATH fill #COLOR
+        words = line.split()
+        if line.startswith("output * bg ") and line not in before and len(words) == 6:
+            fade(os.path.expanduser(words[3]), words[5])
     # reload_style_on_change: a newer style.css reloads the style (and the
     # colors.css it imports) without making the bar again
     (REPO / "waybar/.config/waybar/style.css").touch()
+
+
+def fade(path, color):
+    tool = shutil.which("wallpaper-fade") or str(REPO / "bin/.local/bin/wallpaper-fade")
+    subprocess.run([tool, path, color], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
 def install_vscode():
@@ -261,8 +277,11 @@ def main():
         print(palette(current).get(sys.argv[2], ""))
         return
     if arg == "dump":
-        base = sys.argv[2:] == ["base"]
-        print(json.dumps(load(current) if base else palette(current)))
+        base = sys.argv[2:3] == ["base"]
+        name = sys.argv[3] if base and len(sys.argv) == 4 else current
+        if not (THEMES / f"{name}.ini").exists():
+            sys.exit(f"theme: no palette named {name!r} in {THEMES}")
+        print(json.dumps(load(name) if base else palette(current)))
         return
     if arg == "local" and len(sys.argv) == 2:
         for key, value in read_ini(LOCAL).items():

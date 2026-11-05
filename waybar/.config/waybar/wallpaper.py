@@ -74,7 +74,14 @@ FILTERS = {"q": "", "general": True, "anime": False, "people": False,
 # lightness (so contrast stays as the theme has it) and take the
 # wallpaper's hue; the accent is one of the wallpaper's colors
 GRAYS = ["bg0", "bg1", "surface", "bg2", "line", "faint", "off", "mute", "sub", "fg", "hi", "island"]
-COLOR_KEYS = GRAYS + ["accent"]
+# Dark or light: the palette (themes/dark.ini, light.ini) the grays come
+# from, and these keys of it too
+TONES = [("dark", "Dark"), ("light", "Light")]
+TONE_KEYS = ["scheme", "gtk_theme", "prefer_dark", "vscode_type", "shadow",
+             "black", "red", "green", "yellow", "blue", "magenta", "cyan", "white",
+             "bright_black", "bright_red", "bright_green", "bright_yellow",
+             "bright_blue", "bright_magenta", "bright_cyan", "bright_white"]
+COLOR_KEYS = GRAYS + ["accent"] + TONE_KEYS
 STYLE = {"tint": 0.12, "shade": 0.0, "light": 0.75}
 PRESETS = [("Subtle", {"tint": 0.06, "shade": 0.0, "light": 0.78}),
            ("Tinted", {"tint": 0.14, "shade": 0.0, "light": 0.74}),
@@ -435,20 +442,26 @@ def derive(base, found, accent=None, tint=STYLE["tint"], shade=STYLE["shade"], l
     dom = max(found, key=lambda c: c[1] * (0.05 + chroma(c[0])))
     dh = hls(dom[0])[0]
     strength = min(1.0, chroma(dom[0]) / 0.12)
+    # Dark or light palette: the backgrounds take the tint, the text less
+    dark = hls(base["bg0"])[1] < 0.5
     out = {}
     for key in GRAYS:
         _, l, _ = hls(base[key])
-        dark = l < 0.5
-        out[key] = from_hls(dh, l + shade * (1 if dark else 0.3), tint * strength * (1 if dark else 0.4))
+        back = (l < 0.5) == dark
+        # A near-white shows a tint less than a near-black does
+        k = (1 if back else 0.4) * (1 if dark else 1.6)
+        out[key] = from_hls(dh, l + shade * (1 if back else 0.3), tint * strength * k)
     pick = found[accent if accent is not None and accent < len(found) else vivid(found)][0]
     ah, _, sat = hls(pick)
     # A gray accent stays gray
     sat = min(0.8, max(0.3, sat)) if chroma(pick) > 0.06 else 0.0
-    # Bright enough to read on the background, and to hold dark text
-    color = from_hls(ah, light, sat)
-    while contrast(color, out["bg0"]) < 4.5 and light < 0.95:
-        light += 0.02
-        color = from_hls(ah, light, sat)
+    # Far enough from the background to read on it, and to hold text of the
+    # background's color: as bright as `light` says on dark, as deep on light
+    level, step = (light, 0.02) if dark else (1 - light, -0.02)
+    color = from_hls(ah, level, sat)
+    while contrast(color, out["bg0"]) < 4.5 and 0.05 < level < 0.95:
+        level += step
+        color = from_hls(ah, level, sat)
     out["accent"] = color
     return out
 
@@ -459,12 +472,27 @@ def theme(*args):
     return subprocess.run([THEME, *args], capture_output=True, text=True).stdout
 
 
-def base_palette():
-    """The repo's palette, without this machine's choices."""
+def base_palette(name=None):
+    """The repo's palette (or the one named), without this machine's choices."""
     try:
-        return json.loads(theme("dump", "base"))
+        return json.loads(theme("dump", "base", *([name] if name else [])))
     except ValueError:
         return {}
+
+
+def tones(base):
+    """{tone: (palette, {key: hex} it puts on top of `base`)}; a tone with
+    no palette file is just `base`."""
+    out = {}
+    for name, _ in TONES:
+        p = base_palette(name) or base
+        out[name] = (p, {k: p[k] for k in COLOR_KEYS if k in p and p[k] != base.get(k)})
+    return out
+
+
+def tone_of(colors, base):
+    """The tone of saved colors: light when they make GTK light."""
+    return "light" if colors.get("scheme", base.get("scheme")) == "prefer-light" else "dark"
 
 
 def saved():
@@ -480,8 +508,9 @@ def values(path, colors):
 
 
 def show(path, bg):
-    """Just the picture, when the colors stay as they are."""
-    subprocess.run(["swaymsg", f"output * bg {path} fill #{bg}"], stdout=subprocess.DEVNULL)
+    """Just the picture, when the colors stay as they are (with a crossfade)."""
+    tool = shutil.which("wallpaper-fade") or str(HOME / ".local/bin/wallpaper-fade")
+    subprocess.run([tool, path, bg], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
 def preview(path, colors):
