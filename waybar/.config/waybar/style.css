@@ -119,7 +119,7 @@ window#waybar {
 }
 
 #cpu, #memory { padding: 0 6px; color: @fg; }
-#network { padding: 0 8px 0 6px; color: @fg; }
+#network { padding: 0 6px; color: @fg; }
 #network.disconnected { color: @mute; }
 /* CPU and memory are just information: no hover */
 #network:hover { color: @hi; }
@@ -139,16 +139,18 @@ window#waybar {
 #battery.warning:not(.charging) { color: @hi; font-weight: bold; }
 #battery.critical:not(.charging) { color: @bg0; background: @accent; border-radius: 4px; padding: 0 8px; }
 
-#tray { padding: 0 6px 0 0; }
-/* No tray icons: no space, so the menu stays centered in its island */
-#tray.empty { padding: 0; }
+/* The space goes after the last icon, not on the tray: an empty tray takes
+   none (waybar doesn't mark it .empty), so the line before the menu sits as
+   far from the network as the Spotify one does from the CPU */
+#tray { padding: 0; }
+#tray > *:last-child { margin-right: 6px; }
 
 #custom-distro { padding: 0 6px 0 2px; color: @fg; transition: color 150ms ease; }
 #custom-distro:hover { color: @hi; }
 /* A short line between the status items and the menu */
 #custom-menu {
     padding: 0 4px 0 12px;
-    margin: 7px 0 8px 4px;
+    margin: 7px 0 8px 0;
     border-left: 1px solid @line;
     color: @fg;
 }
