@@ -19,7 +19,7 @@ window#waybar {
 }
 
 /* notch.svg draws the curved sides (12px each); the middle is plain color */
-#left, #mpris, #clock, #right, #custom-updates {
+#left, #mpris, #clock, #right, #custom-updates, #privacy {
     background-color: @island;
     background-clip: padding-box;
     border-style: solid;
@@ -89,6 +89,32 @@ window#waybar {
     opacity: 0;
 }
 #custom-updates.updates, #custom-updates.release { animation: media-in 300ms ease-out; }
+
+/* Screen shared or mic on: a small red pill in its own island right of the
+   clock. The pill slides down like the media island (on the island itself
+   the animation leaves it hidden) and pulses like the VPN while it connects.
+   The mirror left of the clock has the same size and nothing to see, so the
+   clock doesn't move */
+#privacy { margin-left: 6px; padding: 0 2px 2px 2px; }
+#mirror { opacity: 0; }
+#mirror #privacy { margin-left: 0; margin-right: 6px; }
+#privacy-item {
+    padding: 0 5px;
+    margin: 7px 0 8px 0;
+    border-radius: 4px;
+    background: @red;
+    color: @bg0;
+    animation: privacy-in 300ms ease-out, privacy-pulse 900ms ease-in-out 300ms infinite alternate;
+}
+#privacy-item + #privacy-item { margin-left: 4px; }
+/* As media-in, from its own margins */
+@keyframes privacy-in {
+    from { margin-top: -25px; margin-bottom: 40px; opacity: 0; }
+    to { margin-top: 7px; margin-bottom: 8px; opacity: 1; }
+}
+@keyframes privacy-pulse {
+    to { background: alpha(@red, 0.6); }
+}
 
 #cpu, #memory { padding: 0 6px; color: @fg; }
 #network { padding: 0 8px 0 6px; color: @fg; }

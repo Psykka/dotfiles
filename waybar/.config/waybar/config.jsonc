@@ -15,7 +15,7 @@
     "fixed-center": true,
     "expand-left": true,
     "modules-left": ["group/left", "custom/space#before-media", "mpris", "custom/space#after-media"],
-    "modules-center": ["clock"],
+    "modules-center": ["group/mirror", "clock", "privacy"],
     "modules-right": ["custom/updates", "group/right"],
 
     // Tux and the workspaces share the left island
@@ -76,6 +76,34 @@
         "signal": 8,
         "tooltip": false,
         "on-click": "~/.config/waybar/panel.py updates"
+    },
+
+    // Screen shared or mic recording (PipeWire): a red island just right of
+    // the clock, only while it happens; the tooltip says which app
+    "privacy": {
+        "icon-size": 13,
+        "icon-spacing": 8,
+        "transition-duration": 0,
+        "modules": [
+            { "type": "screenshare", "tooltip": true, "tooltip-icon-size": 20 },
+            { "type": "audio-in", "tooltip": true, "tooltip-icon-size": 20 }
+        ]
+    },
+    // The same, invisible, left of the clock: the center is centered as a
+    // whole, so this keeps the clock still when the real one shows up. In a
+    // group so CSS can tell it apart (#mirror)
+    "group/mirror": {
+        "orientation": "horizontal",
+        "modules": ["privacy#mirror"]
+    },
+    "privacy#mirror": {
+        "icon-size": 13,
+        "icon-spacing": 8,
+        "transition-duration": 0,
+        "modules": [
+            { "type": "screenshare", "tooltip": false },
+            { "type": "audio-in", "tooltip": false }
+        ]
     },
 
     // System stats, network, battery, tray and the general menu share the
