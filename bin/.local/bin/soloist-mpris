@@ -19,8 +19,9 @@ import time
 from gi.repository import Gio, GLib
 
 SOLOIST = os.path.expanduser("~/.local/bin/soloist")
-# Soloist often leaves out a track's length; spotify_player (Web API) has it
-SPOTIFY_PLAYER = os.path.expanduser("~/.local/bin/spotify_player")
+# Soloist often leaves out a track's length; the Web API has it (the bar's
+# spotify.py, logged in from the media popup)
+SPOTIFY = os.path.expanduser("~/.config/waybar/spotify.py")
 BUS_NAME = "org.mpris.MediaPlayer2.soloist"
 PATH = "/org/mpris/MediaPlayer2"
 RETRY_S = 3  # Soloist not up yet (or restarting): try again after this
@@ -145,12 +146,11 @@ class Player:
         return self.lengths.get(uri) or 0
 
     def ask_length(self, uri):
-        out = subprocess.run([SPOTIFY_PLAYER, "get", "item", "track", "--id", uri.rsplit(":", 1)[-1]],
-                             capture_output=True, text=True, timeout=20).stdout
         try:
-            d = json.loads(out)["duration"]
-            us = d["secs"] * 1_000_000 + d["nanos"] // 1000
-        except (ValueError, KeyError, TypeError):
+            out = subprocess.run([SPOTIFY, "length", uri.rsplit(":", 1)[-1]],
+                                 capture_output=True, text=True, timeout=20).stdout
+            us = int(out) * 1000
+        except (OSError, ValueError, subprocess.TimeoutExpired):
             return  # left as None: not asked again
         def got():
             self.lengths[uri] = us

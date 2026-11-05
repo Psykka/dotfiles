@@ -128,10 +128,8 @@ else echo "Skipped: Go is not installed"; fi
 say "Login screen (greetd + tuigreet)"
 SUDO=sudo greeter/install-greeter.sh
 
-say "Spotify (Soloist plays, spotify_player feeds the bar)"
-# A long build (Rust); if it fails, the rest of the setup still goes on
-SUDO=sudo spotify-player/install-spotify-player.sh || echo "Skipped: spotify_player didn't build"
-# The player itself: Spotify Soloist, downloaded from Spotify, kept current
+say "Spotify (Soloist, Spotify's own headless player)"
+# Downloaded from Spotify and kept current; if it fails, the rest goes on
 soloist/install-soloist.sh || echo "Skipped: Soloist didn't install"
 
 say "VSCode"
