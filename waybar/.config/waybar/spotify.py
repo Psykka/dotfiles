@@ -392,6 +392,17 @@ def devices():
             for d in api("GET", "me/player/devices").get("devices") or []]
 
 
+def volume():
+    """The playing device's volume, 0-100 (Spotify's own, the one every
+    app shows), or None when nothing is playing anywhere."""
+    d = (api("GET", "me/player") or {}).get("device") or {}
+    return d.get("volume_percent")
+
+
+def set_volume(percent):
+    api("PUT", f"me/player/volume?volume_percent={max(0, min(100, int(percent)))}")
+
+
 def length(track_id):
     return api("GET", f"tracks/{track_id}").get("duration_ms")
 

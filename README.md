@@ -34,11 +34,12 @@ from the start.
 - **Media**: click the song for a compact player with the cover, seek and
   volume (scroll on the speaker button, or click it for the volume line).
   The song stays on the bar, dimmed, while paused.
-- **Spotify** (its own island, when Soloist is set up; `Super + M` opens it
-  on the search): a mini client with your library (playlists, albums,
-  artists, each opening its songs), search with filters, the queue and
-  what played lately, the devices, and the player with shuffle, repeat and
-  Liked Songs. Settings has its two logins.
+- **Spotify** (first in the right island, when Soloist is set up;
+  `Super + M` opens it on the search): a mini client with your library
+  (playlists, albums, artists, each opening its songs), search with
+  filters, the queue and what played lately, the devices, and the player
+  with shuffle, repeat, Liked Songs and Spotify's own volume (the one every
+  Spotify app shows). Settings has its two logins.
 - **Calendar**: click the clock. Today in the middle of a fixed six-week
   month, and the last 30 notifications beside it.
 - **Updates**: the cube shows pending packages (and a new Fedora release),

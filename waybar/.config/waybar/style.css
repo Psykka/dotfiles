@@ -19,7 +19,7 @@ window#waybar {
 }
 
 /* notch.svg draws the curved sides (12px each); the middle is plain color */
-#left, #mpris, #clock, #right, #custom-updates, #custom-spotify, #privacy {
+#left, #mpris, #clock, #right, #custom-updates, #privacy {
     background-color: @island;
     background-clip: padding-box;
     border-style: solid;
@@ -53,7 +53,14 @@ window#waybar {
 
 #mpris, #clock, #custom-menu, #custom-spotify { transition: color 150ms ease; }
 #mpris:hover, #clock:hover, #custom-menu:hover, #custom-spotify:hover { color: @hi; }
-#custom-spotify { margin-right: 8px; color: @fg; }
+/* First in the right island, a short line between it and the rest (the
+   margins keep the line shorter than the bar) */
+#custom-spotify {
+    color: @fg;
+    padding: 0 9px 0 4px;
+    margin: 8px 3px 8px 0;
+    border-right: 1px solid @faint;
+}
 
 #custom-space-before-media, #custom-space-after-media { background: transparent; }
 

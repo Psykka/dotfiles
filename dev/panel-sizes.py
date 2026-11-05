@@ -183,6 +183,10 @@ def steps(mode):
             (800, "shuffle", lambda s: s.toggle_shuffle(), False),
             (800, "repeat", lambda s: s.cycle_repeat(), False),
             (800, "next song", lambda s: subprocess.run(["playerctl", "-p", "fakeplayer", "next"]), False),
+            (800, "volume line", lambda s: s.show_volume(True), False),
+            (800, "mute", lambda s: s.toggle_mute(), False),
+            (800, "unmute", lambda s: s.toggle_mute(), False),
+            (3500, "back to progress", lambda _: None, False),
             (1500, "settings", lambda s: s.show_page("settings"), False),
             # The two logins gone, then back
             (800, "player logged out", lambda s: (fake_spotify().log_out_soloist(), s.check_account()), False),

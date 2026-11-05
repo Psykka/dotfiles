@@ -16,7 +16,7 @@
     "expand-left": true,
     "modules-left": ["group/left", "custom/space#before-media", "mpris", "custom/space#after-media"],
     "modules-center": ["group/mirror", "clock", "privacy"],
-    "modules-right": ["custom/updates", "custom/spotify", "group/right"],
+    "modules-right": ["custom/updates", "group/right"],
 
     // Tux and the workspaces share the left island
     "group/left": {
@@ -107,7 +107,7 @@
     // right island
     "group/right": {
         "orientation": "horizontal",
-        "modules": ["cpu", "memory", "battery", "custom/vpn", "network", "tray", "custom/menu"]
+        "modules": ["custom/spotify", "cpu", "memory", "battery", "custom/vpn", "network", "tray", "custom/menu"]
     },
 
     "cpu": {
@@ -125,8 +125,9 @@
     // VPN (vpn/, vpnd.service): a shield, only while one is on (turned on
     // from the menu's VPN page); pulsing while it connects, red when it
     // dropped. Left click: VPN page, right click: off
-    // Spotify's mini client (library, search, queue, devices): an island of
-    // its own, only where Soloist is set up (soloist/ in the dotfiles)
+    // Spotify's mini client (library, search, queue, devices): first in the
+    // right island, a line between it and the rest; only where Soloist is
+    // set up (soloist/ in the dotfiles)
     "custom/spotify": {
         // Any text: a custom module with none is hidden
         "exec": "echo on",

@@ -671,6 +671,7 @@ GAP = 12
 ROW_H = 40
 PIC = 32
 HEAD_H = 30
+CHIP_H = 26  # the filters, the search box and the buttons beside them
 TEXT_W = 38  # a row's title, in characters: the client's width comes from it
 
 
@@ -810,6 +811,7 @@ class Chips(Gtk.Box):
         self.on_pick, self.key, self.buttons = on_pick, None, {}
         for key, text in options:
             b = css(Gtk.Button(label=text), "filter")
+            b.set_size_request(-1, CHIP_H)
             b.connect("clicked", lambda _, k=key: self.pick(k))
             self.pack_start(b, False, False, 0)
             self.buttons[key] = b
@@ -842,6 +844,7 @@ class SpotifyLogin(Gtk.Box):
         names.pack_start(self.detail, False, False, 0)
         self.pack_start(names, True, True, 0)
         self.button = css(Gtk.Button(valign=Gtk.Align.CENTER), "filter")
+        self.button.set_size_request(-1, CHIP_H)
         self.button.add(label(xalign=0.5, width=11))
         self.button.connect("clicked", lambda _: on_click())
         self.pack_end(self.button, False, False, 0)
@@ -885,7 +888,7 @@ class Spotify(Gtk.Box):
     SEARCH_MS = 450  # after the last key, before asking
     CHECK_MS = 1000  # how often a login in the browser is looked at
     FIELDS = ["status", "xesam:title", "xesam:artist", "mpris:artUrl", "mpris:length", "position",
-              "shuffle", "loop", "xesam:url"]
+              "shuffle", "loop", "xesam:url", "volume"]
 
     def __init__(self):
         super().__init__(spacing=GAP)
@@ -936,6 +939,7 @@ class Spotify(Gtk.Box):
         self.entry = Gtk.SearchEntry(placeholder_text="What do you want to hear?")
         # As tall as the filters beside it
         css(self.entry, "search", "in-bar")
+        self.entry.set_size_request(-1, CHIP_H)
         self.entry.connect("search-changed", lambda _: self.search_soon())
         self.entry.connect("activate", lambda _: self.search_now())
         self.search_kind = Chips((("all", "All"), ("track", "Songs"), ("artist", "Artists"),
@@ -947,7 +951,8 @@ class Spotify(Gtk.Box):
         back.pack_start(back_button, False, False, 0)
         self.opened_title = label(css=["title"], ellipsize=True, width=TEXT_W - 14)
         back.pack_start(self.opened_title, True, True, 0)
-        self.play_all = css(Gtk.Button(label="Play"), "filter", "yes")
+        self.play_all = css(Gtk.Button(label="Play", valign=Gtk.Align.CENTER), "filter", "yes")
+        self.play_all.set_size_request(-1, CHIP_H)
         self.play_all.connect("clicked", lambda _: self.opened and self.play(dict(self.opened, kind="context")))
         self.add_page("detail", back, self.play_all)
 
@@ -1011,10 +1016,21 @@ class Spotify(Gtk.Box):
         self.next = icon_button("next", css=["ctl"], on_click=lambda: run(*SPOTIFY_PLAYERCTL, "next"))
         self.repeat = icon_button("repeat", css=["ctl"], on_click=self.cycle_repeat)
         self.heart = icon_button("heart", css=["ctl"], on_click=self.toggle_liked)
-        for w in (self.shuffle, self.prev, self.playing, self.next, self.repeat, self.heart):
+        # Spotify's own volume (the device's, the one every Spotify app
+        # shows), like the media popup: clicked, the progress line turns
+        # into it for a while; scrolling on the button changes it
+        self.vol_button = icon_button("volume", css=["ctl"], on_click=lambda: self.show_volume(
+            self.lines.get_visible_child_name() != "volume"))
+        self.vol_button.add_events(Gdk.EventMask.SCROLL_MASK | Gdk.EventMask.SMOOTH_SCROLL_MASK)
+        self.vol_button.connect("scroll-event", self.scrolled)
+        for w in (self.shuffle, self.prev, self.playing, self.next, self.repeat, self.heart, self.vol_button):
             controls.pack_start(w, False, False, 0)
         top.pack_end(controls, False, False, 0)
         box.pack_start(top, False, False, 0)
+
+        self.lines = Gtk.Stack(homogeneous=True, transition_type=Gtk.StackTransitionType.CROSSFADE,
+                               transition_duration=150)
+        left, right = Gtk.SizeGroup(mode=Gtk.SizeGroupMode.HORIZONTAL), Gtk.SizeGroup(mode=Gtk.SizeGroupMode.HORIZONTAL)
         line = Gtk.Box(spacing=10)
         self.pos = label(css=["muted", "small"], width=5, ellipsize=True)
         self.seek = css(hslider(0, 1, lambda v: run(*SPOTIFY_PLAYERCTL, "position", str(int(v)))), "thin")
@@ -1022,14 +1038,95 @@ class Spotify(Gtk.Box):
         line.pack_start(self.pos, False, False, 0)
         line.pack_start(self.seek, True, True, 0)
         line.pack_start(self.length, False, False, 0)
-        box.pack_start(line, False, False, 0)
+        vol = Gtk.Box(spacing=10)
+        self.mute = icon_button("volume", css=["vol-icon"], on_click=self.toggle_mute)
+        self.mute.set_halign(Gtk.Align.START)
+        self.vol = css(hslider(0, 100, lambda v: self.set_volume(v / 100)), "thin")
+        self.percent = label(css=["muted", "small"], xalign=1.0, width=5)
+        vol.pack_start(self.mute, False, False, 0)
+        vol.pack_start(self.vol, True, True, 0)
+        vol.pack_start(self.percent, False, False, 0)
+        for w in (self.pos, self.mute):
+            left.add_widget(w)
+        for w in (self.length, self.percent):
+            right.add_widget(w)
+        self.lines.add_named(line, "progress")
+        self.lines.add_named(vol, "volume")
+        box.pack_start(self.lines, False, False, 0)
+        self.back_timer = self.vol_timer = None
+        self.unmuted = 1.0
         return box
+
+    # Back to the progress after this long untouched; the Web API (another
+    # device playing) gets the last value after this pause, not every step
+    VOLUME_MS = 3000
+    VOLUME_SEND_MS = 250
+
+    def here(self):
+        """Something loaded on this computer's Soloist (else the volume
+        goes to whatever device plays, through the Web API)."""
+        return self.state.get("here", False)
+
+    def show_volume(self, on):
+        if self.back_timer:
+            GLib.source_remove(self.back_timer)
+            self.back_timer = None
+        if on and self.lines.get_visible_child_name() != "volume" and not self.here() and self.web:
+            in_thread(spotify.volume, lambda v, err: not err and v is not None and self.show_level(v / 100))
+        self.lines.set_visible_child_name("volume" if on else "progress")
+        if on:
+            self.back_timer = GLib.timeout_add(self.VOLUME_MS, lambda: self.show_volume(False))
+        return False
+
+    def show_level(self, level):
+        icon = ICON["volume" if level > 0 else "muted"]
+        for b in (self.vol_button, self.mute):
+            b.get_child().get_children()[0].set_text(icon)
+        self.vol.set_value(level * 100)
+        self.percent.set_text(f"{round(level * 100)}%")
+        css(self.vol, "off", on=level == 0)
+
+    def set_volume(self, level):
+        level = max(0.0, min(1.0, level))
+        if level > 0:
+            self.unmuted = level
+        self.show_level(level)
+        if self.here():
+            run(*SPOTIFY_PLAYERCTL, "volume", f"{level:.2f}")
+        elif self.web:
+            if self.vol_timer:
+                GLib.source_remove(self.vol_timer)
+
+            def send():
+                self.vol_timer = None
+                in_thread(lambda: spotify.set_volume(level * 100), lambda _o, _e: None)
+                return False
+            self.vol_timer = GLib.timeout_add(self.VOLUME_SEND_MS, send)
+        # Still being moved: stays on screen
+        if self.lines.get_visible_child_name() == "volume":
+            self.show_volume(True)
+
+    def scrolled(self, _w, event):
+        ok, _dx, dy = event.get_scroll_deltas()
+        if not ok:
+            dy = {Gdk.ScrollDirection.UP: -1, Gdk.ScrollDirection.DOWN: 1}.get(event.get_scroll_direction()[1], 0)
+        if dy:
+            self.set_volume(self.vol.get_value() / 100 - dy * 0.05)
+        return True
+
+    def toggle_mute(self):
+        level = self.vol.get_value() / 100
+        self.set_volume(0 if level > 0 else self.unmuted)
 
     def refresh(self):
         fmt = "\x1f".join("{{%s}}" % f for f in self.FIELDS)
         out = run(*SPOTIFY_PLAYERCTL, "metadata", "--format", fmt)
-        status, title, artist, art, length, pos, shuffle, loop, uri = (out.split("\x1f") + [""] * 9)[:9]
-        self.state = {"shuffle": shuffle == "true", "loop": loop or "None"}
+        status, title, artist, art, length, pos, shuffle, loop, uri, vol = (out.split("\x1f") + [""] * 10)[:10]
+        self.state = {"shuffle": shuffle == "true", "loop": loop or "None", "here": bool(out)}
+        # Here, the player says the volume; elsewhere it's asked for when
+        # the volume line opens. Not while it's being moved
+        if out and vol and not (self.lines.get_visible_child_name() == "volume" and self.back_timer):
+            self.show_level(float(vol))
         for b in (self.shuffle, self.prev, self.playing, self.next, self.repeat):
             b.set_sensitive(bool(out))
         self.now_title.set_text(title or ("Unknown" if out else "Nothing playing"))
