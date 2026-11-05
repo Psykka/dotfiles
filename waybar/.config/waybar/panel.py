@@ -29,6 +29,7 @@ import displays
 import spotify
 import vpn
 import wallpaper
+from texts import tr
 
 gi.require_version("Gtk", "3.0")
 gi.require_version("Gdk", "3.0")
@@ -572,7 +573,7 @@ class Media(Gtk.Box):
         status, title, artist, art, length, pos, vol, player = (out.split("\x1f") + [""] * 8)[:8]
         for b in self.buttons:
             b.set_sensitive(bool(out))
-        self.title.set_text(title or ("Unknown" if out else "Nothing playing"))
+        self.title.set_text(title or (tr("media.unknown") if out else tr("media.nothing-playing")))
         self.artist.set_text(artist)
         self.player.set_text(player.capitalize())
         length_s = int(length or 0) / 1e6
@@ -657,8 +658,8 @@ def in_thread(work, done):
 
 def spotify_error(err):
     if isinstance(err, spotify.NotLoggedIn):
-        return "Not logged in to your library"
-    return str(err) or "Something went wrong"
+        return tr("spotify.not-logged-in-to-your")
+    return str(err) or tr("spotify.something-went-wrong")
 
 
 SPOTIFY_ICONS = {"liked": "heart", "playlist": "list", "album": "disc", "artist": "user", "track": "music",
@@ -880,8 +881,8 @@ class Spotify(Gtk.Box):
 
     It plays on Soloist; the lists come from the Web API (spotify.py)."""
 
-    NAV = (("library", "book", "Library"), ("search", "search", "Search"),
-           ("queue", "queue", "Queue"), ("devices", "laptop", "Devices"))
+    NAV = (("library", "book", tr("spotify.library")), ("search", "search", tr("spotify.search")),
+           ("queue", "queue", tr("spotify.queue")), ("devices", "laptop", tr("spotify.devices")))
     SEARCH_MS = 450  # after the last key, before asking
     CHECK_MS = 1000  # how often a login in the browser is looked at
     FIELDS = ["status", "xesam:title", "xesam:artist", "mpris:artUrl", "mpris:length", "position",
@@ -908,7 +909,7 @@ class Spotify(Gtk.Box):
             self.nav[key] = b
         # Settings, with a dot while one of the logins is missing
         b = icon_button("gear", css=["nav"], on_click=lambda: self.show_page("settings"))
-        b.set_tooltip_text("Settings")
+        b.set_tooltip_text(tr("spotify.settings"))
         self.nav["settings"] = b
         dot = Gtk.Overlay()
         dot.add(b)
@@ -929,18 +930,18 @@ class Spotify(Gtk.Box):
                                transition_duration=120)
         self.lists = {}
 
-        self.library_kind = Chips((("playlists", "Playlists"), ("albums", "Albums"), ("artists", "Artists")),
+        self.library_kind = Chips((("playlists", tr("spotify.playlists")), ("albums", tr("spotify.albums")), ("artists", tr("spotify.artists"))),
                                   lambda _: self.load("library"))
-        self.add_page("library", label("Library", ["title"]), self.library_kind)
+        self.add_page("library", label(tr("spotify.library"), ["title"]), self.library_kind)
 
-        self.entry = Gtk.SearchEntry(placeholder_text="What do you want to hear?")
+        self.entry = Gtk.SearchEntry(placeholder_text=tr("spotify.what-do-you-want-to"))
         # As tall as the filters beside it
         css(self.entry, "search", "in-bar")
         self.entry.set_size_request(-1, CHIP_H)
         self.entry.connect("search-changed", lambda _: self.search_soon())
         self.entry.connect("activate", lambda _: self.search_now())
-        self.search_kind = Chips((("all", "All"), ("track", "Songs"), ("artist", "Artists"),
-                                  ("album", "Albums"), ("playlist", "Playlists")), lambda _: self.search_now())
+        self.search_kind = Chips((("all", tr("spotify.all")), ("track", tr("spotify.songs")), ("artist", tr("spotify.artists")),
+                                  ("album", tr("spotify.albums")), ("playlist", tr("spotify.playlists"))), lambda _: self.search_now())
         self.add_page("search", self.entry, self.search_kind)
 
         back = Gtk.Box(spacing=8)
@@ -948,25 +949,24 @@ class Spotify(Gtk.Box):
         back.pack_start(back_button, False, False, 0)
         self.opened_title = label(css=["title"], ellipsize=True, width=TEXT_W - 14)
         back.pack_start(self.opened_title, True, True, 0)
-        self.play_all = css(Gtk.Button(label="Play", valign=Gtk.Align.CENTER), "filter", "yes")
+        self.play_all = css(Gtk.Button(label=tr("spotify.play"), valign=Gtk.Align.CENTER), "filter", "yes")
         self.play_all.set_size_request(-1, CHIP_H)
         self.play_all.connect("clicked", lambda _: self.opened and self.play(dict(self.opened, kind="context")))
         self.add_page("detail", back, self.play_all)
 
-        self.queue_kind = Chips((("next", "Up next"), ("recent", "Recently played")), lambda _: self.load("queue"))
-        self.add_page("queue", label("Queue", ["title"]), self.queue_kind)
-        self.add_page("devices", label("Devices", ["title"]), None, pick=self.transfer)
+        self.queue_kind = Chips((("next", tr("spotify.up-next")), ("recent", tr("spotify.recently-played"))), lambda _: self.load("queue"))
+        self.add_page("queue", label(tr("spotify.queue"), ["title"]), self.queue_kind)
+        self.add_page("devices", label(tr("spotify.devices"), ["title"]), None, pick=self.transfer)
         self.lists["devices"].mark(lambda d: d.get("active"))
 
         settings = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=GAP)
-        settings.pack_start(spotify_head(label("Settings", ["title"])), False, False, 0)
-        settings.pack_start(label("TWO LOGINS, FOR TWO THINGS", ["heading"]), False, False, 0)
-        self.player_login = SpotifyLogin("laptop", "1 · Play on this computer", self.check_account)
-        self.library_login = SpotifyLogin("user", "2 · See your library", self.library_button)
+        settings.pack_start(spotify_head(label(tr("spotify.settings"), ["title"])), False, False, 0)
+        settings.pack_start(label(tr("spotify.two-logins-for-two-things"), ["heading"]), False, False, 0)
+        self.player_login = SpotifyLogin("laptop", tr("spotify.1-play-on-this-computer"), self.check_account)
+        self.library_login = SpotifyLogin("user", tr("spotify.2-see-your-library"), self.library_button)
         settings.pack_start(self.player_login, False, False, 0)
         settings.pack_start(self.library_login, False, False, 0)
-        note = label("Spotify keeps them apart: one makes this computer a speaker (Soloist), "
-                     "the other lets this window read your library.", ["muted", "small"], width=TEXT_W + 6)
+        note = label(tr("spotify.spotify-keeps-them-apart-one"), ["muted", "small"], width=TEXT_W + 6)
         note.set_line_wrap(True)
         settings.pack_start(note, False, False, 0)
         self.version = label(css=["muted", "small"], ellipsize=True, width=TEXT_W + 6)
@@ -1126,8 +1126,8 @@ class Spotify(Gtk.Box):
             self.show_level(float(vol))
         for b in (self.shuffle, self.prev, self.playing, self.next, self.repeat):
             b.set_sensitive(bool(out))
-        self.now_title.set_text(title or ("Unknown" if out else "Nothing playing"))
-        self.now_artist.set_text(artist or ("" if out else "Pick something to play"))
+        self.now_title.set_text(title or (tr("spotify.unknown") if out else tr("spotify.nothing-playing")))
+        self.now_artist.set_text(artist or ("" if out else tr("spotify.pick-something-to-play")))
         self.cover.show(art if art.startswith(("http", "file://")) else None)
         length_s = int(length or 0) / 1e6
         pos_s = min(int(pos or 0) / 1e6, length_s) if length_s else 0
@@ -1139,7 +1139,7 @@ class Spotify(Gtk.Box):
         self.playing.get_child().get_children()[0].set_text(ICON["pause" if status == "Playing" else "play"])
         css(self.shuffle, "on", on=self.state["shuffle"])
         css(self.repeat, "on", on=self.state["loop"] != "None")
-        self.repeat.set_tooltip_text({"None": "Repeat: off", "Playlist": "Repeat: all", "Track": "Repeat: this song"}
+        self.repeat.set_tooltip_text({"None": tr("spotify.repeat-off"), "Playlist": tr("spotify.repeat-all"), "Track": tr("spotify.repeat-this-song")}
                                      .get(self.state["loop"]))
         if uri != self.song:
             self.song_changed(uri or None)
@@ -1161,7 +1161,7 @@ class Spotify(Gtk.Box):
         self.heart.set_sensitive(on is not None)
         css(self.heart, "on", on=bool(on))
         css(self.heart.get_child().get_children()[0], "regular", on=not on)
-        self.heart.set_tooltip_text("Remove from Liked Songs" if on else "Save to Liked Songs")
+        self.heart.set_tooltip_text(tr("spotify.remove-from-liked-songs") if on else tr("spotify.save-to-liked-songs"))
 
     def toggle_liked(self):
         uri, on = self.song, not self.liked
@@ -1189,19 +1189,19 @@ class Spotify(Gtk.Box):
         self.web, self.soloist = web, soloist
         host = GLib.get_host_name()
         if soloist:
-            self.player_login.show(f"Logged in · plays as “{host}”", "Spotify's own player, no window open.",
+            self.player_login.show(tr("spotify.logged-in-plays-as", host=host), tr("spotify.spotify-s-own-player-no"),
                                    ok=True)
         else:
-            self.player_login.show("Not logged in", f"In the Spotify app: Devices → “{host}”, once.",
-                                   "Check again")
+            self.player_login.show(tr("spotify.not-logged-in"), tr("spotify.in-the-spotify-app-devices", host=host),
+                                   tr("spotify.check-again"))
         if pending:
-            self.library_login.show("Waiting for the browser…", "Log in there; it comes back by itself.", "Cancel")
+            self.library_login.show(tr("spotify.waiting-for-the-browser"), tr("spotify.log-in-there-it-comes"), tr("spotify.cancel"))
             GLib.timeout_add(self.CHECK_MS, lambda: self.check_account() and False)
         elif web:
-            self.library_login.show("Logged in", "Playlists, search, the queue and devices.", "Log out", ok=True)
+            self.library_login.show(tr("spotify.logged-in"), tr("spotify.playlists-search-the-queue-and"), tr("spotify.log-out"), ok=True)
         else:
-            self.library_login.show("Not logged in", "Opens the browser once.", "Log in")
-        self.version.set_text(f"Soloist {version}, renewed every week" if version else "")
+            self.library_login.show(tr("spotify.not-logged-in"), tr("spotify.opens-the-browser-once"), tr("spotify.log-in"))
+        self.version.set_text(tr("spotify.soloist-renewed-every-week", version=version) if version else "")
         self.dot.set_opacity(0 if (web and soloist) else 1)
         if web is False:
             self.not_logged_in()
@@ -1222,9 +1222,9 @@ class Spotify(Gtk.Box):
         self.check_account()
 
     def not_logged_in(self):
-        ask = {"kind": "login", "title": "Log in to see your library", "sub": "Settings → 2 · See your library"}
+        ask = {"kind": "login", "title": tr("spotify.log-in-to-see-your"), "sub": tr("spotify.settings-2-see-your-library")}
         for key, page in self.lists.items():
-            page.show_items([ask], "Not logged in to your library")
+            page.show_items([ask], tr("spotify.not-logged-in-to-your"))
         self.show_liked(None)
 
     # ---------------------------------------------------------- pages and lists
@@ -1260,16 +1260,16 @@ class Spotify(Gtk.Box):
         if key == "library":
             what = self.library_kind.key
             work = {"playlists": spotify.playlists, "albums": spotify.albums, "artists": spotify.artists}[what]
-            empty = f"No {what} saved yet"
+            empty = tr("spotify.no-saved-yet", what=what)
         elif key == "queue":
             what = self.queue_kind.key
             work = spotify.queue if what == "next" else spotify.recent
-            empty = "Nothing up next" if what == "next" else "Nothing played lately"
+            empty = tr("spotify.nothing-up-next") if what == "next" else tr("spotify.nothing-played-lately")
         elif key == "devices":
-            what, work, empty = None, self.device_rows, "No devices: open Spotify somewhere"
+            what, work, empty = None, self.device_rows, tr("spotify.no-devices-open-spotify-somewhere")
         elif key == "detail":
             item = self.opened
-            what, work, empty = item["uri"], lambda: spotify.tracks(item), "Nothing in it"
+            what, work, empty = item["uri"], lambda: spotify.tracks(item), tr("spotify.nothing-in-it")
         else:
             return
         token = self.asked[key] = (what, self.asked.get(key, (None, 0))[1] + 1)
@@ -1297,9 +1297,9 @@ class Spotify(Gtk.Box):
     def device_rows(self):
         rows = []
         for d in spotify.devices():
-            where = "This computer (Soloist)" if d["here"] else d["type"].capitalize()
+            where = tr("spotify.this-computer-soloist") if d["here"] else d["type"].capitalize()
             rows.append(dict(d, kind=d["type"] if d["type"] in SPOTIFY_ICONS else "speaker", title=d["name"],
-                             sub=where + (" · playing here" if d["active"] else ""), image=None))
+                             sub=where + (tr("spotify.playing-here") if d["active"] else ""), image=None))
         return sorted(rows, key=lambda d: not d["here"])
 
     def search_soon(self):
@@ -1331,7 +1331,7 @@ class Spotify(Gtk.Box):
             if err:
                 page.say(spotify_error(err), error=True)
             else:
-                page.show_items(items, "" if items else f"Nothing found for “{words}”")
+                page.show_items(items, "" if items else tr("spotify.nothing-found-for", words=words))
         in_thread(lambda: spotify.search(words, kind), done)
 
     # ---------------------------------------------------------- picking
@@ -1359,12 +1359,12 @@ class Spotify(Gtk.Box):
 
     def play(self, item):
         page = self.lists.get(self.pages.get_visible_child_name()) or self.lists["library"]
-        page.say(f"Playing {item['title']}…")
+        page.say(tr("spotify.playing", title=item['title']))
         # The whole of what's open, or a song inside its context
         uri, context = (item["uri"], None) if item.get("kind") == "context" else (item["uri"], item.get("context"))
 
         def done(_out, err):
-            page.say(spotify_error(err) if err else f"Playing {item['title']}", error=bool(err))
+            page.say(spotify_error(err) if err else tr("spotify.playing-2", title=item['title']), error=bool(err))
             if err and not self.soloist:
                 self.check_account()
             self.refresh()
@@ -1374,7 +1374,7 @@ class Spotify(Gtk.Box):
         """A song up next: on to it, keeping what plays around it."""
         page = self.lists["queue"]
         count = page.items.index(item) + 1
-        page.say(f"Skipping to {item['title']}…")
+        page.say(tr("spotify.skipping-to", title=item['title']))
 
         def done(_out, err):
             page.say(spotify_error(err) if err else "", error=bool(err))
@@ -1387,7 +1387,7 @@ class Spotify(Gtk.Box):
             self.show_page("settings")
             return
         page = self.lists["devices"]
-        page.say(f"Moving to {device['name']}…")
+        page.say(tr("spotify.moving-to", name=device['name']))
 
         def done(_out, err):
             if err:
@@ -1417,10 +1417,10 @@ class Month(Gtk.Box):
     one size, so changing months moves nothing; today in the accent color.
     Scrolling over the days changes the month too."""
 
-    MONTHS = ("January", "February", "March", "April", "May", "June", "July",
-              "August", "September", "October", "November", "December")
-    WEEKDAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
-    DAYS = ("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat")  # Sunday first
+    MONTHS = (tr("calendar.january"), tr("calendar.february"), tr("calendar.march"), tr("calendar.april"), tr("calendar.may"), tr("calendar.june"), tr("calendar.july"),
+              tr("calendar.august"), tr("calendar.september"), tr("calendar.october"), tr("calendar.november"), tr("calendar.december"))
+    WEEKDAYS = (tr("calendar.monday"), tr("calendar.tuesday"), tr("calendar.wednesday"), tr("calendar.thursday"), tr("calendar.friday"), tr("calendar.saturday"), tr("calendar.sunday"))
+    DAYS = (tr("calendar.sun"), tr("calendar.mon"), tr("calendar.tue"), tr("calendar.wed"), tr("calendar.thu"), tr("calendar.fri"), tr("calendar.sat"))  # Sunday first
     CELL = 30  # a square: today's mark sits evenly around its number
 
     def __init__(self):
@@ -1435,7 +1435,7 @@ class Month(Gtk.Box):
         self.title = label(css=["month"], xalign=0.5, width=14)
         nav.pack_start(self.title, False, False, 0)
         nav.pack_start(icon_button("right", css=["small"], on_click=lambda: self.move(1)), False, False, 0)
-        self.back = Gtk.Button(label="Today")
+        self.back = Gtk.Button(label=tr("calendar.today"))
         css(self.back, "small")
         self.back.connect("clicked", lambda _: self.show(today.year, today.month))
         nav.pack_end(self.back, False, False, 0)
@@ -1492,7 +1492,7 @@ class Calendar(Gtk.Box):
         left.set_size_request(400, -1)
         header = Gtk.Box()
         header.pack_start(label("NOTIFICATIONS", ["heading"]), True, True, 0)
-        self.clear = Gtk.Button(label="Clear")
+        self.clear = Gtk.Button(label=tr("calendar.clear"))
         self.clear.get_style_context().add_class("small")
         self.clear.connect("clicked", lambda _: self.clear_all())
         header.pack_end(self.clear, False, False, 0)
@@ -1510,7 +1510,7 @@ class Calendar(Gtk.Box):
         self.right = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
         top = Gtk.Box()
         top.pack_start(label("CALENDAR", ["heading"]), True, True, 0)
-        top.pack_end(icon_button("image", "Wallpaper", lambda: spawn(PANEL, "wallpaper"), css=["small"]),
+        top.pack_end(icon_button("image", tr("calendar.wallpaper"), lambda: spawn(PANEL, "wallpaper"), css=["small"]),
                      False, False, 0)
         self.right.pack_start(top, False, False, 0)
         self.month = Month()
@@ -1523,7 +1523,7 @@ class Calendar(Gtk.Box):
             self.items.remove(c)
         self.clear.set_sensitive(bool(notes))
         if not notes:
-            self.items.pack_start(label("No notifications", ["muted"]), False, False, 0)
+            self.items.pack_start(label(tr("calendar.no-notifications"), ["muted"]), False, False, 0)
         # Same height for every card: one line each, cut with "…"
         for n in notes:
             card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
@@ -1621,9 +1621,9 @@ class NetworkRow(Gtk.Box):
             body.pack_start(self.list, False, False, 0)
             # Password for a new protected network, shown when needed
             self.ask = Gtk.Box(spacing=6)
-            self.password = Gtk.Entry(visibility=False, placeholder_text="Password", hexpand=True)
+            self.password = Gtk.Entry(visibility=False, placeholder_text=tr("network.password"), hexpand=True)
             self.password.connect("activate", lambda _: self.join(self.asking, self.password.get_text()))
-            go = Gtk.Button(label="Join")
+            go = Gtk.Button(label=tr("network.join"))
             go.get_style_context().add_class("yes")
             go.connect("clicked", lambda _: self.join(self.asking, self.password.get_text()))
             self.ask.pack_start(self.password, True, True, 0)
@@ -1644,15 +1644,15 @@ class NetworkRow(Gtk.Box):
         up = [d for d in devices if len(d) == 3 and d[1] == "connected" and d[0] in ("ethernet", "wifi")]
         if not up:
             self.icon.set_text(ICON["offline"])
-            self.title.set_text("Disconnected")
-            self.subtitle.set_text("Wi-Fi off" if self.has_wifi and run("nmcli", "radio", "wifi") != "enabled" else "")
+            self.title.set_text(tr("network.disconnected"))
+            self.subtitle.set_text(tr("network.wi-fi-off") if self.has_wifi and run("nmcli", "radio", "wifi") != "enabled" else "")
         elif up[0][0] == "wifi":
             self.icon.set_text(ICON["wifi"])
             self.title.set_text(up[0][2])
             self.subtitle.set_text("Wi-Fi")
         else:
             self.icon.set_text(ICON["ethernet"])
-            self.title.set_text("Wired")
+            self.title.set_text(tr("network.wired"))
             self.subtitle.set_text(up[0][2])
 
     def toggle_list(self):
@@ -1673,7 +1673,7 @@ class NetworkRow(Gtk.Box):
         if run("nmcli", "radio", "wifi") != "enabled":
             self.list.show_all()
             return
-        self.list.pack_start(label("Searching…", ["muted", "small"]), False, False, 4)
+        self.list.pack_start(label(tr("network.searching"), ["muted", "small"]), False, False, 4)
         self.list.show_all()
         threading.Thread(target=self.scan_worker, daemon=True).start()
 
@@ -1695,7 +1695,7 @@ class NetworkRow(Gtk.Box):
         for c in self.list.get_children():
             self.list.remove(c)
         if not found:
-            self.list.pack_start(label("No networks found", ["muted", "small"]), False, False, 4)
+            self.list.pack_start(label(tr("network.no-networks-found"), ["muted", "small"]), False, False, 4)
         for ssid, (in_use, signal, secured) in found:
             b = Gtk.Button()
             row = Gtk.Box(spacing=10)
@@ -1716,7 +1716,7 @@ class NetworkRow(Gtk.Box):
             return
         self.asking = ssid
         self.password.set_text("")
-        self.password.set_placeholder_text(f"Password for {ssid}")
+        self.password.set_placeholder_text(tr("network.password-for", ssid=ssid))
         self.ask.set_no_show_all(False)  # hidden when the menu opened
         self.ask.show_all()
         self.password.grab_focus()
@@ -1725,7 +1725,7 @@ class NetworkRow(Gtk.Box):
         if not ssid:
             return
         self.ask.hide()
-        self.subtitle.set_text(f"Connecting to {ssid}…")
+        self.subtitle.set_text(tr("network.connecting-to", ssid=ssid))
 
         def work():
             known = any(nm_fields(l)[0] == ssid for l in run("nmcli", "-t", "-f", "NAME", "connection", "show").splitlines())
@@ -1762,11 +1762,11 @@ class Updates(Gtk.Box):
             card.get_style_context().add_class("notif")
             card.pack_start(label(ICON["upgrade"], ["icon"], xalign=0.5, width=2), False, False, 0)
             names = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
-            names.pack_start(label(f"Fedora {release} is available", ["title"]), False, False, 0)
+            names.pack_start(label(tr("updates.fedora-is-available", release=release), ["title"]), False, False, 0)
             # It runs the package update first (updates.py), so this one is enough
-            names.pack_start(label("Updates the packages too, then reboots", ["muted", "small"]), False, False, 0)
+            names.pack_start(label(tr("updates.updates-the-packages-too-then"), ["muted", "small"]), False, False, 0)
             card.pack_start(names, True, True, 0)
-            up = Gtk.Button(label="Upgrade")
+            up = Gtk.Button(label=tr("updates.upgrade"))
             up.get_style_context().add_class("yes")
             up.set_valign(Gtk.Align.CENTER)
             up.connect("clicked", lambda _: self.start("release"))
@@ -1774,7 +1774,7 @@ class Updates(Gtk.Box):
             self.pack_start(card, False, False, 0)
 
         if packages:
-            self.pack_start(label(f"{len(packages)} package{'s' if len(packages) != 1 else ''} to update",
+            self.pack_start(label(tr("updates.package-to-update", count=len(packages), plural='s' if len(packages) != 1 else ''),
                                   ["muted", "small"]), False, False, 0)
             scroll = Gtk.ScrolledWindow()
             scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
@@ -1789,14 +1789,14 @@ class Updates(Gtk.Box):
             scroll.add(rows)
             self.pack_start(scroll, False, False, 0)
         elif not release:
-            self.pack_start(label("Everything is up to date", ["muted"]), False, False, 0)
+            self.pack_start(label(tr("updates.everything-is-up-to-date"), ["muted"]), False, False, 0)
 
         buttons = Gtk.Box(spacing=8, homogeneous=True)
-        later = Gtk.Button(label="Not now")
+        later = Gtk.Button(label=tr("updates.not-now"))
         later.connect("clicked", lambda _: self.close_panel())
         buttons.pack_start(later, True, True, 0)
         if packages:
-            now = Gtk.Button(label="Update packages")
+            now = Gtk.Button(label=tr("updates.update-packages"))
             # With a new release, its Upgrade is the one to press
             if not release:
                 now.get_style_context().add_class("yes")
@@ -1849,7 +1849,7 @@ class VolumeLine(Gtk.Box):
             self.slider.set_value(min(volume, 100))
             self.percent.set_text(f"{volume}%")
         self.mute.get_child().get_children()[0].set_text(ICON[self.icons[muted]])
-        self.mute.set_tooltip_text("Unmute" if muted else "Mute")
+        self.mute.set_tooltip_text(tr("sound.unmute") if muted else tr("sound.mute"))
         css(self.slider, "off", on=muted)
 
 
@@ -1899,8 +1899,8 @@ class SoundCard(Gtk.Box):
         self.volume.set_sensitive(bool(d))
         if not d:
             self.icon.set_text(ICON["volume" if self.kind == "sink" else "mic"])
-            self.title.set_text("No output found" if self.kind == "sink" else "No microphone found")
-            self.port.set_text("Is it plugged in?")
+            self.title.set_text(tr("sound.no-output-found") if self.kind == "sink" else tr("sound.no-microphone-found"))
+            self.port.set_text(tr("sound.is-it-plugged-in"))
             self.volume.set(0, True)
             return
         self.icon.set_text(ICON[d["icon"]])
@@ -1949,13 +1949,13 @@ class AppRow(Gtk.Box):
         playing = s["kind"] == "sink-input"
         self.app.set_text(s["app"])
         # Where it is when that's not the device in use (the arrows bring it)
-        self.where.set_text(device if target else "Playing" if playing else "Recording")
-        self.where.set_tooltip_text(f"On {device}" if device else None)
+        self.where.set_text(device if target else tr("sound.playing") if playing else tr("sound.recording"))
+        self.where.set_tooltip_text(tr("sound.on", device=device) if device else None)
         self.volume.icons = ("volume", "muted") if playing else ("mic", "mic-off")
         self.volume.set(s["volume"], s["mute"])
         self.move.set_opacity(1 if target else 0)
         self.move.set_sensitive(bool(target))
-        self.move.set_tooltip_text(f"Move to {target['title']}" if target else None)
+        self.move.set_tooltip_text(tr("sound.move-to", title=target['title']) if target else None)
 
     def set_volume(self, value):
         audio.set_stream_volume(self.stream["kind"], self.stream["index"], value)
@@ -2055,8 +2055,8 @@ class Sound(Gtk.Stack):
 
         main = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
         main.pack_start(page_title("SOUND", on_back), False, False, 0)
-        test = css(Gtk.Button(label="Test"), "small")
-        test.set_tooltip_text("Play a test sound")
+        test = css(Gtk.Button(label=tr("sound.test")), "small")
+        test.set_tooltip_text(tr("sound.play-a-test-sound"))
         test.connect("clicked", lambda _: audio.test_sound())
         out = section("OUTPUT", test)
         self.output = SoundCard("sink", self.pick)
@@ -2071,16 +2071,16 @@ class Sound(Gtk.Stack):
 
         # The device's own capture volumes, under PipeWire's: one stuck at 0%
         # silences the microphone whatever the input volume says
-        gain = section("MIC GAIN")
+        gain = section(tr("sound.mic-gain"))
         self.gains = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
-        self.no_gain = label("This microphone has none of its own", ["muted", "small"])
+        self.no_gain = label(tr("sound.this-microphone-has-none-of"), ["muted", "small"])
         self.gains.pack_start(self.no_gain, False, False, 0)
         gain.pack_start(scroll_room(self.gains, self.GAIN_ROWS * (GainRow.HEIGHT + 4)), False, False, 0)
         main.pack_start(gain, False, False, 0)
 
         apps = section("APPS")
         self.apps = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
-        self.no_apps = label("Nothing is playing or recording", ["muted", "small"])
+        self.no_apps = label(tr("sound.nothing-is-playing-or-recording"), ["muted", "small"])
         self.apps.pack_start(self.no_apps, False, False, 0)
         apps.pack_start(scroll_room(self.apps, self.APP_ROWS * (AppRow.HEIGHT + 4)), False, False, 0)
         main.pack_start(apps, False, False, 0)
@@ -2089,17 +2089,17 @@ class Sound(Gtk.Stack):
         self.fixes = Gtk.Stack(homogeneous=True, transition_type=Gtk.StackTransitionType.CROSSFADE,
                                transition_duration=150)
         buttons = Gtk.Box(spacing=8, homogeneous=True)
-        restart = Gtk.Button(label="Restart audio")
+        restart = Gtk.Button(label=tr("sound.restart-audio"))
         restart.connect("clicked", lambda _: self.restart())
         buttons.pack_start(restart, True, True, 0)
-        fix = css(Gtk.Button(label="Fix microphone"), "yes")
+        fix = css(Gtk.Button(label=tr("sound.fix-microphone")), "yes")
         fix.connect("clicked", lambda _: self.fix())
         buttons.pack_start(fix, True, True, 0)
         self.fixes.add_named(buttons, "buttons")
         working = Gtk.Box(spacing=10, halign=Gtk.Align.CENTER)
         self.spinner = Spinner()
         working.pack_start(self.spinner, False, False, 0)
-        working.pack_start(label("Restarting the sound server…", ["muted"]), False, False, 0)
+        working.pack_start(label(tr("sound.restarting-the-sound-server"), ["muted"]), False, False, 0)
         self.fixes.add_named(working, "working")
         done = Gtk.Box(spacing=8)
         self.done = label(css=["small"], ellipsize=True)
@@ -2188,7 +2188,7 @@ class Sound(Gtk.Stack):
         for c in self.choices.get_children():
             self.choices.remove(c)
         if not found:
-            self.choices.pack_start(label("None found", ["muted", "small"]), False, False, 0)
+            self.choices.pack_start(label(tr("sound.none-found"), ["muted", "small"]), False, False, 0)
         for d in found:
             b = css(Gtk.Button(), "device-main", "device-card")
             b.set_size_request(-1, DeviceRow.HEIGHT)
@@ -2256,7 +2256,7 @@ class Sound(Gtk.Stack):
         if not source:
             self.signal.set_text("")
             return
-        self.signal.set_text("Muted" if source["mute"] else "Listening…")
+        self.signal.set_text(tr("sound.muted") if source["mute"] else tr("sound.listening"))
         self.meter_proc = proc = audio.level_stream(source["name"])
         threading.Thread(target=self.listen, args=(proc, source["mute"]), daemon=True).start()
 
@@ -2283,7 +2283,7 @@ class Sound(Gtk.Stack):
             return False
         self.input.meter.set_value(level)
         if not muted:
-            text = "Silent: check its gain" if silent else "Hearing you" if level > 0.3 else "Listening…"
+            text = tr("sound.silent-check-its-gain") if silent else tr("sound.hearing-you") if level > 0.3 else tr("sound.listening")
             if self.signal.get_text() != text:
                 self.signal.set_text(text)
         return False
@@ -2321,7 +2321,7 @@ class Sound(Gtk.Stack):
         def finished():
             self.spinner.stop()
             self.refresh()
-            self.tell(["Sound server restarted"])
+            self.tell([tr("sound.sound-server-restarted")])
             return False
 
         threading.Thread(target=work, daemon=True).start()
@@ -2373,7 +2373,7 @@ class Arrangement(Gtk.DrawingArea):
             cr.set_source_rgb(*self.color("accent" if chosen else "faint"))
             cr.set_line_width(1.5 if chosen else 1)
             cr.stroke()
-            text = o["name"] + ("\nMain" if o["id"] == self.main and len(self.items) > 1 else "")
+            text = o["name"] + (tr("displays.main") if o["id"] == self.main and len(self.items) > 1 else "")
             layout = self.create_pango_layout(text)
             layout.set_alignment(Pango.Alignment.CENTER)
             layout.set_width(int(max(1, w - 8) * Pango.SCALE))
@@ -2412,7 +2412,7 @@ class Displays(Gtk.Box):
         first.pack_start(page_title("DISPLAYS", self.on_back), False, False, 0)
         self.pack_start(first, False, False, 0)
         if not items:
-            first.pack_start(label("No display found", ["muted"]), False, False, 0)
+            first.pack_start(label(tr("displays.no-display-found"), ["muted"]), False, False, 0)
             self.show_all()
             return
         main = displays.primary(items)
@@ -2426,7 +2426,7 @@ class Displays(Gtk.Box):
             order = [x["id"] for x in sorted(items, key=lambda x: x["rect"]["x"])]
             i = order.index(o["id"])
             moves = Gtk.Box(spacing=8, homogeneous=True)
-            for step, text in ((-1, "Move left"), (1, "Move right")):
+            for step, text in ((-1, tr("displays.move-left")), (1, tr("displays.move-right"))):
                 b = icon_button("left" if step < 0 else "right", text, css=["small"],
                                 on_click=lambda s=step: self.act(displays.move, o["id"], s))
                 b.get_child().set_halign(Gtk.Align.CENTER)
@@ -2448,8 +2448,8 @@ class Displays(Gtk.Box):
         if many:
             row = Gtk.Box(spacing=10, margin_top=4)
             names = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
-            names.pack_start(label("Main display"), False, False, 0)
-            names.pack_start(label("Workspace 1 and the focus at login", ["muted", "small"]), False, False, 0)
+            names.pack_start(label(tr("displays.main-display")), False, False, 0)
+            names.pack_start(label(tr("displays.workspace-1-and-the-focus"), ["muted", "small"]), False, False, 0)
             row.pack_start(names, True, True, 0)
             switch = Gtk.Switch(active=o["id"] == main, valign=Gtk.Align.CENTER)
             # There is always one: turn another one on to change it
@@ -2464,7 +2464,7 @@ class Displays(Gtk.Box):
         scale = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
         top = Gtk.Box()
         top.pack_start(label("SCALE", ["heading"]), True, True, 0)
-        top.pack_end(label(f"Looks like {o['rect']['width']}×{o['rect']['height']}",
+        top.pack_end(label(tr("displays.looks-like", width=o['rect']['width'], height=o['rect']['height']),
                            ["muted", "small"], xalign=1.0), False, False, 0)
         scale.pack_start(top, False, False, 0)
         choices = Gtk.Box(spacing=4, homogeneous=True)
@@ -2479,7 +2479,7 @@ class Displays(Gtk.Box):
         self.pack_start(scale, False, False, 0)
 
         # Rotation and free placement are in wdisplays; `displays.py save` keeps them
-        advanced = Gtk.Button(label="More settings…")
+        advanced = Gtk.Button(label=tr("displays.more-settings"))
         advanced.connect("clicked", lambda _: self.advanced())
         self.pack_start(advanced, False, False, 0)
         self.show_all()
@@ -2553,11 +2553,11 @@ def bt_reason(err):
     """BlueZ's error, in words."""
     low = err.lower()
     if "page-timeout" in low or "page timeout" in low or "host is down" in low or "timeout" in low:
-        return "off or out of reach"
+        return tr("bluetooth.off-or-out-of-reach")
     if "profile-unavailable" in low:
-        return "no sound profile (restart audio on the Sound page)"
+        return tr("bluetooth.no-sound-profile-restart-audio")
     if "authentication" in low or "rejected" in low or "canceled" in low:
-        return "pairing was refused or cancelled"
+        return tr("bluetooth.pairing-was-refused-or-cancelled")
     return err
 
 
@@ -2590,13 +2590,13 @@ class DeviceRow(Gtk.Stack):
         self.main.connect("clicked", lambda _: on_use(self.device))
         card.pack_start(self.main, True, True, 0)
         self.trash = icon_button("trash", css=["device-side"], on_click=lambda: self.set_visible_child_name("forget"))
-        self.trash.set_tooltip_text("Forget this device")
+        self.trash.set_tooltip_text(tr("bluetooth.forget-this-device"))
         card.pack_end(self.trash, False, False, 0)
         self.add_named(card, "main")
 
         # "Forget X?" with a way out
         self.question = label(css=["title"], ellipsize=True)
-        forget, _ = self.choice(self.question, "Forget", "danger",
+        forget, _ = self.choice(self.question, tr("bluetooth.forget"), "danger",
                                 lambda ok: on_forget(self.device) if ok else self.back())
         self.add_named(forget, "forget")
         # "Pair with X?" and the code both sides must show
@@ -2605,13 +2605,13 @@ class DeviceRow(Gtk.Stack):
         self.pair_code = label(css=["muted", "small"], ellipsize=True)
         pair_text.pack_start(self.pair_title, False, False, 0)
         pair_text.pack_start(self.pair_code, False, False, 0)
-        pair, self.pair_ok = self.choice(pair_text, "Pair", "yes", self.answer)
+        pair, self.pair_ok = self.choice(pair_text, tr("bluetooth.pair"), "yes", self.answer)
         self.add_named(pair, "pair")
 
     def choice(self, text, yes, yes_css, on_answer):
         card = css(Gtk.Box(spacing=6), "device-card", "asking")
         card.pack_start(text, True, True, 0)
-        no = css(Gtk.Button(label="Cancel", valign=Gtk.Align.CENTER), "small")
+        no = css(Gtk.Button(label=tr("bluetooth.cancel"), valign=Gtk.Align.CENTER), "small")
         no.connect("clicked", lambda _: on_answer(False))
         ok = css(Gtk.Button(label=yes, valign=Gtk.Align.CENTER), "small", yes_css)
         ok.connect("clicked", lambda _: on_answer(True))
@@ -2630,7 +2630,7 @@ class DeviceRow(Gtk.Stack):
         css(self.status, "error", on=bool(error))
         self.main.set_sensitive(not status.endswith("…"))
         self.trash.set_visible(d["paired"])
-        self.question.set_text(f"Forget {d['name']}?")
+        self.question.set_text(tr("bluetooth.forget-2", name=d['name']))
         if not d["paired"] and self.get_visible_child_name() == "forget":
             self.back()
 
@@ -2638,10 +2638,10 @@ class DeviceRow(Gtk.Stack):
         """A pairing request for this device: a code to check (reply with
         True/False), or one to type on the device (reply is None)."""
         self.reply = reply
-        self.pair_title.set_text(f"Pair with {self.device['name']}?" if kind == "confirm"
-                                 else f"Type {code} on it")
-        self.pair_code.set_text(f"Code {code} on both" if kind == "confirm" and code else
-                                "then Enter" if kind == "show" else "It asks to pair")
+        self.pair_title.set_text(tr("bluetooth.pair-with", name=self.device['name']) if kind == "confirm"
+                                 else tr("bluetooth.type-on-it", code=code))
+        self.pair_code.set_text(tr("bluetooth.code-on-both", code=code) if kind == "confirm" and code else
+                                tr("bluetooth.then-enter") if kind == "show" else tr("bluetooth.it-asks-to-pair"))
         # Typing the code on the device: nothing to answer but Cancel
         self.pair_ok.set_visible(kind == "confirm")
         self.set_visible_child_name("pair")
@@ -2684,7 +2684,7 @@ class Bluetooth(Gtk.Box):
         self.pack_start(page_title("BLUETOOTH", on_back), False, False, 0)
         toggle = Gtk.Box(spacing=10)
         names = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
-        names.pack_start(label("Bluetooth"), False, False, 0)
+        names.pack_start(label(tr("bluetooth.bluetooth")), False, False, 0)
         self.visible_as = label(css=["muted", "small"], ellipsize=True)
         names.pack_start(self.visible_as, False, False, 0)
         toggle.pack_start(names, True, True, 0)
@@ -2694,18 +2694,18 @@ class Bluetooth(Gtk.Box):
         self.pack_start(toggle, False, False, 0)
 
         lists = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
-        lists.pack_start(label("MY DEVICES", ["heading"]), False, False, 0)
+        lists.pack_start(label(tr("bluetooth.my-devices"), ["heading"]), False, False, 0)
         self.paired = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
-        self.no_paired = label("No paired devices yet", ["muted", "small"])
+        self.no_paired = label(tr("bluetooth.no-paired-devices-yet"), ["muted", "small"])
         self.paired.pack_start(self.no_paired, False, False, 0)
         lists.pack_start(self.paired, False, False, 0)
         top = Gtk.Box(spacing=8, margin_top=10)
-        top.pack_start(label("OTHER DEVICES", ["heading"]), False, False, 0)
+        top.pack_start(label(tr("bluetooth.other-devices"), ["heading"]), False, False, 0)
         self.spinner = Spinner()
         top.pack_start(self.spinner, False, False, 0)
         lists.pack_start(top, False, False, 0)
         self.nearby = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
-        self.no_nearby = label("Put the device in pairing mode", ["muted", "small"])
+        self.no_nearby = label(tr("bluetooth.put-the-device-in-pairing"), ["muted", "small"])
         self.nearby.pack_start(self.no_nearby, False, False, 0)
         lists.pack_start(self.nearby, False, False, 0)
 
@@ -2764,9 +2764,9 @@ class Bluetooth(Gtk.Box):
         with self.switch.handler_block(self.switch_handler):
             self.switch.set_active(on)
         self.switch.set_sensitive(bool(adapter))
-        self.visible_as.set_text(f"Visible as {adapter.get('Alias', '')}" if on else
-                                 "Off" if adapter else "No adapter found")
-        self.off_text.set_text("Bluetooth is off" if adapter else "No Bluetooth adapter")
+        self.visible_as.set_text(tr("bluetooth.visible-as", value=adapter.get('Alias', '')) if on else
+                                 tr("bluetooth.off") if adapter else tr("bluetooth.no-adapter-found"))
+        self.off_text.set_text(tr("bluetooth.bluetooth-is-off") if adapter else tr("bluetooth.no-bluetooth-adapter"))
         self.room.set_visible_child_name("on" if on else "off")
         (self.spinner.start if on and adapter.get("Discovering") else self.spinner.stop)()
         devices = bluetooth.devices() if on else []
@@ -2803,8 +2803,8 @@ class Bluetooth(Gtk.Box):
             reason, story = self.errors[d["path"]]
             return reason[0].upper() + reason[1:], story
         if d["connected"]:
-            return "Connected" + (f" · {d['battery']}% battery" if d["battery"] is not None else ""), None
-        return ("Not connected" if d["paired"] else "Click to pair"), None
+            return tr("bluetooth.connected") + (tr("bluetooth.battery", battery=d['battery']) if d["battery"] is not None else ""), None
+        return (tr("bluetooth.not-connected") if d["paired"] else tr("bluetooth.click-to-pair")), None
 
     # ------------------------------------------------------------- actions
 
@@ -2821,13 +2821,13 @@ class Bluetooth(Gtk.Box):
             if row.get_visible_child_name() == "forget":
                 row.back()
         if d["connected"]:
-            self.busy[path] = "Disconnecting…"
+            self.busy[path] = tr("bluetooth.disconnecting")
             bluetooth.disconnect(path, lambda err: self.done(path, err, "disconnect"))
         elif d["paired"]:
-            self.busy[path] = "Connecting…"
+            self.busy[path] = tr("bluetooth.connecting")
             bluetooth.connect(path, lambda err: self.done(path, err, "connect"))
         else:
-            self.busy[path] = "Pairing…"
+            self.busy[path] = tr("bluetooth.pairing")
             bluetooth.pair(path, lambda err: self.done(path, err, "pair"))
         self.refresh()
 
@@ -2839,7 +2839,7 @@ class Bluetooth(Gtk.Box):
         self.prompt.hide()
         if err:
             reason = bt_reason(err)
-            self.errors[path] = reason, f"Couldn't {verb}: {reason}"
+            self.errors[path] = reason, tr("bluetooth.couldn-t", verb=verb, reason=reason)
         self.refresh()
 
     def forget(self, d):
@@ -2909,12 +2909,12 @@ class VpnRow(Gtk.Stack):
         self.main.connect("clicked", lambda _: on_use(self.profile))
         card.pack_start(self.main, True, True, 0)
         self.trash = icon_button("trash", css=["device-side"], on_click=lambda: self.set_visible_child_name("forget"))
-        self.trash.set_tooltip_text("Forget this VPN")
+        self.trash.set_tooltip_text(tr("vpn.forget-this-vpn"))
         card.pack_end(self.trash, False, False, 0)
         self.add_named(card, "main")
 
         self.question = label(css=["title"], ellipsize=True)
-        forget, _ = DeviceRow.choice(self, self.question, "Forget", "danger",
+        forget, _ = DeviceRow.choice(self, self.question, tr("vpn.forget"), "danger",
                                      lambda ok: on_forget(self.profile) if ok else self.back())
         self.add_named(forget, "forget")
 
@@ -2926,7 +2926,7 @@ class VpnRow(Gtk.Stack):
         self.status.set_text(status)
         self.status.set_tooltip_text(error)
         css(self.status, "error", on=bool(error))
-        self.question.set_text(f"Forget {p['name']}?")
+        self.question.set_text(tr("vpn.forget-2", name=p['name']))
 
     def back(self):
         self.set_visible_child_name("main")
@@ -2955,7 +2955,7 @@ class ChosenApp(Gtk.Box):
         self.main.connect("clicked", lambda _: on_open(app_id))
         self.pack_start(self.main, True, True, 0)
         trash = icon_button("trash", css=["device-side"], on_click=lambda: on_remove(app_id))
-        trash.set_tooltip_text("Stop using the VPN for it")
+        trash.set_tooltip_text(tr("vpn.stop-using-the-vpn-for"))
         self.pack_end(trash, False, False, 0)
 
     def update(self, status):
@@ -2970,11 +2970,11 @@ class ChosenApp(Gtk.Box):
         on = bool(status) and status["state"] in ("on", "connecting")
         inside = bool(exe) and any(a["name"] == exe[:15] for a in (status or {}).get("apps", []))
         out = not inside and bool(exe) and bool(vpn.outside(exe))
-        text = ("Not installed anymore" if not info else
-                "Open, in the VPN" if inside else
-                "Open outside the VPN: close it and open it here" if out else
-                "Click to open it through the VPN" if on else
-                "Opens through the VPN once one is on")
+        text = (tr("vpn.not-installed-anymore") if not info else
+                tr("vpn.open-in-the-vpn") if inside else
+                tr("vpn.open-outside-the-vpn-close") if out else
+                tr("vpn.click-to-open-it-through") if on else
+                tr("vpn.opens-through-the-vpn-once"))
         self.status.set_text(text)
         self.status.set_tooltip_text(text)
         css(self.status, "error", on=out)
@@ -2994,7 +2994,7 @@ class VpnForm(Gtk.Box):
 
         tabs = Gtk.Box(spacing=4, homogeneous=True)
         self.tabs = {}
-        for key, text in (("file", "From a file"), ("openconnect", "OpenConnect")):
+        for key, text in (("file", tr("vpn.from-a-file")), ("openconnect", "OpenConnect")):
             b = css(Gtk.Button(label=text), "tab")
             b.connect("clicked", lambda _, k=key: self.show_tab(k))
             tabs.pack_start(b, True, True, 0)
@@ -3011,19 +3011,19 @@ class VpnForm(Gtk.Box):
             b.connect("clicked", lambda btn: self.pick(btn.source))
             page.pack_start(b, False, False, 0)
             self.found.append(b)
-        self.path = self.entry("File: ~/Downloads/vpn.conf")
+        self.path = self.entry(tr("vpn.file-downloads-vpn-conf"))
         self.path.connect("changed", lambda e: self.typed_path(e.get_text()))
         page.pack_start(self.path, False, False, 0)
-        self.file_name = self.entry("Name")
+        self.file_name = self.entry(tr("vpn.name"))
         page.pack_start(self.file_name, False, False, 0)
         self.file_user, self.file_password, login = self.login()
         page.pack_start(login, False, False, 0)
         self.pages.add_named(page, "file")
 
         page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
-        self.oc_name = self.entry("Name")
+        self.oc_name = self.entry(tr("vpn.name"))
         page.pack_start(self.oc_name, False, False, 0)
-        self.server = self.entry("Server: vpn.example.com")
+        self.server = self.entry(tr("vpn.server-vpn-example-com"))
         page.pack_start(self.server, False, False, 0)
         self.protocol = Gtk.ComboBoxText()
         for key, text in vpn.PROTOCOLS:
@@ -3038,9 +3038,9 @@ class VpnForm(Gtk.Box):
         bottom = Gtk.Box(spacing=6)
         self.error = label(css=["error", "small"], ellipsize=True)
         bottom.pack_start(self.error, True, True, 0)
-        cancel = css(Gtk.Button(label="Cancel"), "small")
+        cancel = css(Gtk.Button(label=tr("vpn.cancel")), "small")
         cancel.connect("clicked", lambda _: self.on_done())
-        add = css(Gtk.Button(label="Add"), "small", "yes")
+        add = css(Gtk.Button(label=tr("vpn.add")), "small", "yes")
         add.connect("clicked", lambda _: self.add())
         bottom.pack_end(add, False, False, 0)
         bottom.pack_end(cancel, False, False, 0)
@@ -3054,8 +3054,8 @@ class VpnForm(Gtk.Box):
 
     def login(self):
         row = Gtk.Box(spacing=6, homogeneous=True)
-        user = self.entry("Username")
-        password = self.entry("Password")
+        user = self.entry(tr("vpn.username"))
+        password = self.entry(tr("vpn.password"))
         password.set_visibility(False)
         row.pack_start(user, True, True, 0)
         row.pack_start(password, True, True, 0)
@@ -3094,7 +3094,7 @@ class VpnForm(Gtk.Box):
         kind, login = vpn.kind_of(source)
         self.source = source if kind else None
         self.needs_login(login)
-        self.error.set_text("" if kind else "Not a WireGuard or OpenVPN config")
+        self.error.set_text("" if kind else tr("vpn.not-a-wireguard-or-openvpn"))
         name = os.path.splitext(os.path.basename(source[1]))[0]
         # The name follows the pick, unless one was typed
         if self.file_name.get_text() in ("", self.auto_name):
@@ -3111,7 +3111,7 @@ class VpnForm(Gtk.Box):
     def add(self):
         if self.tab == "file":
             if not self.source:
-                self.error.set_text("Pick a file first")
+                self.error.set_text(tr("vpn.pick-a-file-first"))
                 return
             err = vpn.import_source(self.source, self.file_name.get_text().strip(),
                                     self.file_user.get_text().strip(), self.file_password.get_text())
@@ -3158,10 +3158,10 @@ class Vpn(Gtk.Box):
         self.pack_start(top, False, False, 0)
 
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
-        box.pack_start(label("USE IT FOR", ["heading"]), False, False, 0)
+        box.pack_start(label(tr("vpn.use-it-for"), ["heading"]), False, False, 0)
         modes = Gtk.Box(spacing=4, homogeneous=True)
         self.modes = {}
-        for key, text in (("full", "The whole system"), ("apps", "Chosen apps")):
+        for key, text in (("full", tr("vpn.the-whole-system")), ("apps", tr("vpn.chosen-apps"))):
             b = css(Gtk.Button(label=text), "tab")
             b.connect("clicked", lambda _, k=key: self.set_mode(k))
             modes.pack_start(b, True, True, 0)
@@ -3169,12 +3169,12 @@ class Vpn(Gtk.Box):
         box.pack_start(modes, False, False, 0)
         # What the mode means, with a way to open apps in apps mode
         self.mode_line = Gtk.Stack(homogeneous=True, transition_type=Gtk.StackTransitionType.CROSSFADE)
-        self.mode_line.add_named(label("Every app goes through it", ["muted", "small"]), "full")
+        self.mode_line.add_named(label(tr("vpn.every-app-goes-through-it"), ["muted", "small"]), "full")
         line = Gtk.Box(spacing=6)
         self.apps = label(css=["muted", "small"], ellipsize=True)
         line.pack_start(self.apps, True, True, 0)
         # Swaps the VPNs for the chosen apps, in the same room
-        self.opener = css(Gtk.Button(label="Choose apps"), "small")
+        self.opener = css(Gtk.Button(label=tr("vpn.choose-apps")), "small")
         self.opener.connect("clicked", lambda _: self.show_apps(self.room.get_visible_child_name() != "apps"))
         line.pack_end(self.opener, False, False, 0)
         self.mode_line.add_named(line, "apps")
@@ -3182,16 +3182,16 @@ class Vpn(Gtk.Box):
         self.pack_start(box, False, False, 0)
 
         head = Gtk.Box()
-        self.heading = label("MY VPNS", ["heading"])
+        self.heading = label(tr("vpn.my-vpns"), ["heading"])
         head.pack_start(self.heading, False, False, 0)
-        self.add_button = css(Gtk.Button(label="Add"), "small")
+        self.add_button = css(Gtk.Button(label=tr("vpn.add")), "small")
         self.add_button.connect("clicked", lambda _: self.add_app() if self.room.get_visible_child_name() == "apps"
                                 else self.show_form(True))
         head.pack_end(self.add_button, False, False, 0)
         self.pack_start(head, False, False, 0)
 
         self.list = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
-        self.empty = label("No VPNs yet: add one", ["muted", "small"])
+        self.empty = label(tr("vpn.no-vpns-yet-add-one"), ["muted", "small"])
         self.list.pack_start(self.empty, False, False, 0)
         scroll = Gtk.ScrolledWindow()
         scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
@@ -3208,8 +3208,7 @@ class Vpn(Gtk.Box):
         self.room.add_named(self.away, "away")
         # The apps that always use the VPN (apps mode)
         self.app_list = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
-        self.no_apps = label("None yet. Add the apps that should always use the VPN: they open "
-                             "through it from the launcher too", ["muted", "small"])
+        self.no_apps = label(tr("vpn.none-yet-add-the-apps"), ["muted", "small"])
         self.no_apps.set_line_wrap(True)
         self.app_list.pack_start(self.no_apps, False, False, 0)
         scroll = Gtk.ScrolledWindow()
@@ -3253,7 +3252,7 @@ class Vpn(Gtk.Box):
         self.status = s
         self.top_line()
         if not s:
-            self.away.set_text("The VPN service isn't running.\nsudo systemctl start vpnd")
+            self.away.set_text(tr("vpn.the-vpn-service-isn-t"))
             if self.room.get_visible_child_name() != "add":
                 self.room.set_visible_child_name("away")
             for b in self.modes.values():
@@ -3266,8 +3265,8 @@ class Vpn(Gtk.Box):
         self.add_button.set_sensitive(True)
         self.mode_line.set_visible_child_name(s["mode"])
         n = len(vpn.chosen())
-        self.apps.set_text(f"{n} app{'s' if n != 1 else ''} always use{'s' if n == 1 else ''} it" if n else
-                           "Only the apps you choose")
+        self.apps.set_text(tr("vpn.app-always-use-it", n=n, plural='s' if n != 1 else '', plural2='s' if n == 1 else '') if n else
+                           tr("vpn.only-the-apps-you-choose"))
         if s["mode"] != "apps" and self.room.get_visible_child_name() == "apps":
             self.show_apps(False)
         if self.room.get_visible_child_name() == "away":
@@ -3284,20 +3283,20 @@ class Vpn(Gtk.Box):
         self.detail.set_tooltip_text(s["error"] if s and s["error"] else
                                      ", ".join(s["routes"]) if s and s["state"] == "on" else None)
         if not s:
-            title, detail = "VPN", "The service isn't running"
+            title, detail = "VPN", tr("vpn.the-service-isn-t-running")
         elif s["state"] == "on":
-            nets = "the internet" if any(r in ("0.0.0.0/0", "::/0") for r in s["routes"]) else ", ".join(s["routes"])
-            title = f"Connected to {s['profile']}"
+            nets = tr("vpn.the-internet") if any(r in ("0.0.0.0/0", "::/0") for r in s["routes"]) else ", ".join(s["routes"])
+            title = tr("vpn.connected-to", profile=s['profile'])
             detail = f"↓ {size_text(s['rx'])}  ↑ {size_text(s['tx'])}  ·  {nets}"
         elif s["state"] == "connecting":
-            title, detail = f"Connecting to {s['profile']}…", vpn_kind(s) if s["kind"] else ""
+            title, detail = tr("vpn.connecting-to", profile=s['profile']), vpn_kind(s) if s["kind"] else ""
         elif s["state"] == "dropped":
-            title, detail = f"{s['profile']} dropped", "Its traffic is blocked until it's back or off"
+            title, detail = tr("vpn.dropped", profile=s['profile']), tr("vpn.its-traffic-is-blocked-until")
         elif s["state"] == "failed":
-            title, detail = f"Couldn't connect to {s['profile']}", s["error"]
+            title, detail = tr("vpn.couldn-t-connect-to", profile=s['profile']), s["error"]
         else:
-            title = "Not connected"
-            detail = "Pick a VPN below" if s["profiles"] else "Add a VPN below"
+            title = tr("vpn.not-connected")
+            detail = tr("vpn.pick-a-vpn-below") if s["profiles"] else tr("vpn.add-a-vpn-below")
         self.title.set_text(title)
         css(self.title, "device-title", on=bool(s) and s["state"] == "on")
         self.detail.set_text(detail)
@@ -3314,8 +3313,8 @@ class Vpn(Gtk.Box):
             mine = p["name"] == s["profile"]
             state = s["state"] if mine else "off"
             error = s["error"] if mine and state in ("failed", "dropped") else None
-            text = {"on": "Connected", "connecting": "Connecting…", "dropped": "Dropped: traffic blocked",
-                    "failed": f"Failed: {error}"}.get(state, f"{vpn_kind(p)} · {p.get('server', '')}")
+            text = {"on": tr("vpn.connected"), "connecting": tr("vpn.connecting"), "dropped": tr("vpn.dropped-traffic-blocked"),
+                    "failed": tr("vpn.failed", error=error)}.get(state, f"{vpn_kind(p)} · {p.get('server', '')}")
             row.update(p, text, state in ("on", "connecting", "dropped"), error)
             keep.add(p["name"])
         for name in set(self.rows) - keep:
@@ -3354,7 +3353,7 @@ class Vpn(Gtk.Box):
     def report(self, err):
         """Errors the daemon answers at once (most come later, in the status)."""
         if err:
-            self.title.set_text("Couldn't do it")
+            self.title.set_text(tr("vpn.couldn-t-do-it"))
             self.detail.set_text(err)
             css(self.detail, "error")
 
@@ -3380,8 +3379,8 @@ class Vpn(Gtk.Box):
         self.no_apps.set_visible(not ids)
 
     def show_apps(self, on):
-        self.heading.set_text("APPS THAT USE IT" if on else "MY VPNS")
-        self.opener.set_label("Done" if on else "Choose apps")
+        self.heading.set_text(tr("vpn.apps-that-use-it") if on else tr("vpn.my-vpns"))
+        self.opener.set_label(tr("vpn.done") if on else tr("vpn.choose-apps"))
         if on:
             self.fill_apps()
         self.room.set_visible_child_name("apps" if on else "list" if self.status else "away")
@@ -3389,7 +3388,7 @@ class Vpn(Gtk.Box):
     def open_chosen(self, app_id):
         s = self.status
         if not s or s["state"] not in ("on", "connecting"):
-            self.report("Turn a VPN on first: it only opens through one")
+            self.report(tr("vpn.turn-a-vpn-on-first"))
             return
         vpn.open_chosen(app_id)
         GLib.timeout_add(1500, lambda: self.fill_apps() or False)
@@ -3418,10 +3417,10 @@ HAS_BLUETOOTH = os.path.isdir("/sys/class/bluetooth") and bool(os.listdir("/sys/
 class Menu(Gtk.Box):
     # (icon, tile label, confirmation, command)
     POWER = [
-        ("lock", "Lock", "Lock", ["lock"]),
-        ("logout", "Log out", "Log out", ["swaymsg", "exit"]),
-        ("reboot", "Reboot", "Reboot", ["systemctl", "reboot"]),
-        ("power", "Off", "Power off", ["systemctl", "poweroff"]),
+        ("lock", tr("menu.lock"), tr("menu.lock"), ["lock"]),
+        ("logout", tr("menu.log-out"), tr("menu.log-out"), ["swaymsg", "exit"]),
+        ("reboot", tr("menu.reboot"), tr("menu.reboot"), ["systemctl", "reboot"]),
+        ("power", tr("menu.off"), tr("menu.power-off"), ["systemctl", "poweroff"]),
     ]
 
     def __init__(self, page="main"):
@@ -3454,16 +3453,16 @@ class Menu(Gtk.Box):
         buttons = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
         # Settings apps; Bluetooth only where there is an adapter
         buttons.pack_start(label("SETTINGS", ["heading"]), False, False, 4)
-        sound = icon_button("headphones", "Sound", lambda: self.show_page("sound"))
+        sound = icon_button("headphones", tr("menu.sound"), lambda: self.show_page("sound"))
         sound.get_child().pack_end(label(ICON["right"], ["icon", "muted"], xalign=1.0), True, True, 0)
         buttons.pack_start(sound, False, False, 0)
-        screens = icon_button("display", "Displays", lambda: self.show_page("displays"))
+        screens = icon_button("display", tr("menu.displays"), lambda: self.show_page("displays"))
         screens.get_child().pack_end(label(ICON["right"], ["icon", "muted"], xalign=1.0), True, True, 0)
         buttons.pack_start(screens, False, False, 0)
-        buttons.pack_start(icon_button("image", "Wallpaper", lambda: self.run_and_quit([PANEL, "wallpaper"])),
+        buttons.pack_start(icon_button("image", tr("menu.wallpaper"), lambda: self.run_and_quit([PANEL, "wallpaper"])),
                            False, False, 0)
         if self.bluetooth:
-            bt = icon_button("bluetooth", "Bluetooth", lambda: self.show_page("bluetooth"))
+            bt = icon_button("bluetooth", tr("menu.bluetooth"), lambda: self.show_page("bluetooth"))
             bt.get_child().pack_end(label(ICON["right"], ["icon", "muted"], xalign=1.0), True, True, 0)
             buttons.pack_start(bt, False, False, 0)
         if self.vpn:
@@ -3471,11 +3470,11 @@ class Menu(Gtk.Box):
             v.get_child().pack_end(label(ICON["right"], ["icon", "muted"], xalign=1.0), True, True, 0)
             buttons.pack_start(v, False, False, 0)
         buttons.pack_start(label("SYSTEM", ["heading"]), False, False, 4)
-        buttons.pack_start(icon_button("keyboard", "Keybindings", lambda: self.run_and_quit(
+        buttons.pack_start(icon_button("keyboard", tr("menu.keybindings"), lambda: self.run_and_quit(
             [os.path.expanduser("~/.config/sway/keys.sh")])), False, False, 0)
 
         # "Power" opens a row of tiles below it
-        power = icon_button("power", "Power", self.toggle_power)
+        power = icon_button("power", tr("menu.power"), self.toggle_power)
         self.chevron = label(ICON["right"], ["icon", "muted"], xalign=1.0)
         power.get_child().pack_end(self.chevron, True, True, 0)
         buttons.pack_start(power, False, False, 0)
@@ -3527,9 +3526,9 @@ class Menu(Gtk.Box):
             self.confirm_box.remove(c)
         self.confirm_box.pack_start(label(f"{text}?", ["title"], xalign=0.5), False, False, 8)
         row = Gtk.Box(spacing=8, homogeneous=True)
-        no = Gtk.Button(label="No")
+        no = Gtk.Button(label=tr("menu.no"))
         no.connect("clicked", lambda _: self.stack.set_visible_child_name("buttons"))
-        yes = Gtk.Button(label="Yes")
+        yes = Gtk.Button(label=tr("menu.yes"))
         yes.get_style_context().add_class("yes")
         yes.connect("clicked", lambda _: self.run_and_quit(cmd))
         row.pack_start(no, True, True, 0)
@@ -3885,8 +3884,8 @@ class Wallpapers(Gtk.Box):
         top = Gtk.Box(spacing=4)
         top.pack_start(label("WALLPAPER", ["heading"]), True, True, 0)
         self.tabs = {}
-        for name, text in (("wallhaven", "Wallhaven"), ("downloaded", "Downloaded"), ("saved", "Saved"),
-                           ("colors", "Colors")):
+        for name, text in (("wallhaven", tr("wallpaper.wallhaven")), ("downloaded", tr("wallpaper.downloaded")), ("saved", tr("wallpaper.saved")),
+                           ("colors", tr("wallpaper.colors"))):
             b = css(Gtk.Button(label=text), "tab")
             b.connect("clicked", lambda _, n=name: self.show_tab(n))
             top.pack_start(b, False, False, 0)
@@ -4016,29 +4015,29 @@ class Wallpapers(Gtk.Box):
     def search_page(self):
         page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
         row = Gtk.Box(spacing=6)
-        self.entry = css(Gtk.SearchEntry(placeholder_text="Search Wallhaven", hexpand=True), "search")
+        self.entry = css(Gtk.SearchEntry(placeholder_text=tr("wallpaper.search-wallhaven"), hexpand=True), "search")
         self.entry.connect("activate", lambda _: self.search())
         row.pack_start(self.entry, True, True, 0)
-        self.filter_button = icon_button("right", "Filters", self.toggle_filters, css=["small"])
+        self.filter_button = icon_button("right", tr("wallpaper.filters"), self.toggle_filters, css=["small"])
         self.filter_button.get_child().reorder_child(self.filter_button.get_child().get_children()[0], -1)
         row.pack_end(self.filter_button, False, False, 0)
         page.pack_start(row, False, False, 0)
 
         filters = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
         self.paints = []
-        filters.pack_start(self.choice_row("Type", [("general", "General"), ("anime", "Anime"),
-                                                    ("people", "People")]), False, False, 0)
+        filters.pack_start(self.choice_row(tr("wallpaper.type"), [("general", tr("wallpaper.general")), ("anime", tr("wallpaper.anime")),
+                                                    ("people", tr("wallpaper.people"))]), False, False, 0)
         # NSFW is always there (so the row keeps its size), but only works
         # with an API key
-        purity = self.choice_row("Content", [("sfw", "SFW"), ("sketchy", "Sketchy"), ("nsfw", "NSFW")])
+        purity = self.choice_row(tr("wallpaper.content"), [("sfw", "SFW"), ("sketchy", tr("wallpaper.sketchy")), ("nsfw", "NSFW")])
         self.nsfw = purity.buttons["nsfw"]
         filters.pack_start(purity, False, False, 0)
-        filters.pack_start(self.choice_row("Sort", wallpaper.SORTS, "sorting"), False, False, 0)
-        self.range_row = self.choice_row("Top of", wallpaper.RANGES, "range")
+        filters.pack_start(self.choice_row(tr("wallpaper.sort"), wallpaper.SORTS, "sorting"), False, False, 0)
+        self.range_row = self.choice_row(tr("wallpaper.top-of"), wallpaper.RANGES, "range")
         self.range_row.set_sensitive(self.filters["sorting"] == "toplist")
         filters.pack_start(self.range_row, False, False, 0)
-        filters.pack_start(self.choice_row("At least", wallpaper.SIZES, "atleast"), False, False, 0)
-        filters.pack_start(self.choice_row("Shape", wallpaper.RATIOS, "ratio"), False, False, 0)
+        filters.pack_start(self.choice_row(tr("wallpaper.at-least"), wallpaper.SIZES, "atleast"), False, False, 0)
+        filters.pack_start(self.choice_row(tr("wallpaper.shape"), wallpaper.RATIOS, "ratio"), False, False, 0)
         filters.pack_start(self.color_row(), False, False, 0)
         filters.pack_start(self.key_row(), False, False, 0)
         self.filter_revealer = Gtk.Revealer(transition_type=Gtk.RevealerTransitionType.SLIDE_DOWN,
@@ -4112,7 +4111,7 @@ class Wallpapers(Gtk.Box):
         kept in the keyring. The entry and button keep their size whether
         a key is there or not."""
         row = Gtk.Box(spacing=4)
-        row.pack_start(label("API key", ["muted", "small"], width=9), False, False, 0)
+        row.pack_start(label(tr("wallpaper.api-key"), ["muted", "small"], width=9), False, False, 0)
         self.key_entry = css(Gtk.Entry(visibility=False, hexpand=True), "search", "small")
         self.key_entry.connect("activate", lambda _: self.save_key())
         row.pack_start(self.key_entry, True, True, 0)
@@ -4127,12 +4126,12 @@ class Wallpapers(Gtk.Box):
         have = bool(wallpaper.api_key())
         self.key_entry.set_text("")
         self.key_entry.set_sensitive(not have)
-        self.key_entry.set_placeholder_text("In the keyring · NSFW on" if have
-                                            else "From wallhaven.cc/settings/account, for NSFW")
-        self.key_button.set_label("Remove" if have else "Save")
+        self.key_entry.set_placeholder_text(tr("wallpaper.in-the-keyring-nsfw-on") if have
+                                            else tr("wallpaper.from-wallhaven-cc-settings-account"))
+        self.key_button.set_label(tr("wallpaper.remove") if have else tr("wallpaper.save"))
         self.key_button.set_sensitive(True)
         self.nsfw.set_sensitive(have)
-        self.nsfw.set_tooltip_text(None if have else "Needs a Wallhaven API key (below)")
+        self.nsfw.set_tooltip_text(None if have else tr("wallpaper.needs-a-wallhaven-api-key"))
         if not have and self.filters["nsfw"]:
             self.filters["nsfw"] = False
             self.repaint()
@@ -4152,7 +4151,7 @@ class Wallpapers(Gtk.Box):
             try:
                 good, err = wallpaper.check_key(key), None
             except OSError as e:
-                good, err = False, f"Couldn't reach Wallhaven: {getattr(e, 'reason', e)}"
+                good, err = False, tr("wallpaper.couldn-t-reach-wallhaven", value=getattr(e, 'reason', e))
             if good:
                 wallpaper.set_key(key)
             GLib.idle_add(done, good, err)
@@ -4161,13 +4160,13 @@ class Wallpapers(Gtk.Box):
             self.show_key()
             if not good:
                 self.key_entry.set_text(key)
-                self.notice(err or "Wallhaven didn't take that key")
+                self.notice(err or tr("wallpaper.wallhaven-didn-t-take-that"))
             return False
         threading.Thread(target=work, daemon=True).start()
 
     def color_row(self):
         row = Gtk.Box(spacing=4)
-        row.pack_start(label("Color", ["muted", "small"], width=9, xalign=0.0), False, False, 0)
+        row.pack_start(label(tr("wallpaper.color"), ["muted", "small"], width=9, xalign=0.0), False, False, 0)
         grid = Gtk.Grid(row_spacing=2, column_spacing=2)
         buttons = {}
 
@@ -4180,7 +4179,7 @@ class Wallpapers(Gtk.Box):
             paint()
             self.search()
 
-        anyone = css(Gtk.Button(label="Any"), "filter")
+        anyone = css(Gtk.Button(label=tr("wallpaper.any")), "filter")
         anyone.connect("clicked", lambda _: pick(""))
         buttons[""] = anyone
         grid.attach(anyone, 0, 0, 1, 2)
@@ -4214,7 +4213,7 @@ class Wallpapers(Gtk.Box):
         seed = self.results.get("seed") if page != 1 else None
         self.loading(True)
         if not self.results["items"]:
-            self.wh_pager.text.set_text("Searching Wallhaven…")
+            self.wh_pager.text.set_text(tr("wallpaper.searching-wallhaven"))
 
         def work():
             try:
@@ -4229,7 +4228,7 @@ class Wallpapers(Gtk.Box):
             return False  # an older search
         self.loading(False)
         if err:
-            self.notice(f"Couldn't reach Wallhaven: {err}")
+            self.notice(tr("wallpaper.couldn-t-reach-wallhaven-2", err=err))
             self.wh_pager.text.set_text("")
             return False
         self.results = res
@@ -4237,8 +4236,8 @@ class Wallpapers(Gtk.Box):
                                  for w in res["items"]])
         if not res["items"]:
             self.slots(self.wh_grid, COLUMNS * 3)
-        self.notice("" if res["items"] else "No wallpapers found")
-        self.wh_pager.text.set_text(f"Page {res['page']} of {max(1, res['last'])} · {res['total']} wallpapers")
+        self.notice("" if res["items"] else tr("wallpaper.no-wallpapers-found"))
+        self.wh_pager.text.set_text(tr("wallpaper.page-of-wallpapers", page=res['page'], value=max(1, res['last']), total=res['total']))
         self.wh_pager.prev.set_sensitive(res["page"] > 1)
         self.wh_pager.next.set_sensitive(res["page"] < res["last"])
         return False
@@ -4263,7 +4262,7 @@ class Wallpapers(Gtk.Box):
 
     def local_page_box(self):
         page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
-        page.pack_start(label("In ~/Pictures/Wallpapers, and the ones that come with the dotfiles",
+        page.pack_start(label(tr("wallpaper.in-pictures-wallpapers-and-the"),
                               ["muted", "small"]), False, False, 0)
         self.local_grid = Gtk.Grid(row_spacing=6, column_spacing=6)
         self.local_grid.set_size_request(-1, THUMB_H * 3 + 4 * 3 + 12)
@@ -4284,8 +4283,7 @@ class Wallpapers(Gtk.Box):
         shown = files[self.local_page * LOCAL_PAGE:(self.local_page + 1) * LOCAL_PAGE]
         self.fill(self.local_grid, [(str(p), ("local", str(p)), self.in_use(p)) for p in shown])
         self.paint_selection(self.local_grid)
-        self.local_pager.text.set_text(f"Page {self.local_page + 1} of {pages} · "
-                                       f"{len(files)} wallpaper{'s' if len(files) != 1 else ''}")
+        self.local_pager.text.set_text(tr("wallpaper.page-of-wallpaper", value=self.local_page + 1, pages=pages, count=len(files), plural='s' if len(files) != 1 else ''))
         self.local_pager.prev.set_sensitive(self.local_page > 0)
         self.local_pager.next.set_sensitive(self.local_page < pages - 1)
 
@@ -4330,10 +4328,9 @@ class Wallpapers(Gtk.Box):
             self.kept_grid.attach(th, i % COLUMNS, i // COLUMNS, 1, 1)
         self.kept_grid.show_all()
         self.paint_selection(self.kept_grid)
-        self.kept_intro.set_text("Wallpapers with their colors, kept to use again" if self.kept else
-                                 "Nothing kept yet: “Save as…” keeps the wallpaper and colors in use")
-        self.kept_pager.text.set_text(f"Page {self.kept_page + 1} of {pages} · "
-                                      f"{len(self.kept)} theme{'s' if len(self.kept) != 1 else ''}")
+        self.kept_intro.set_text(tr("wallpaper.wallpapers-with-their-colors-kept") if self.kept else
+                                 tr("wallpaper.nothing-kept-yet-save-as"))
+        self.kept_pager.text.set_text(tr("wallpaper.page-of-theme", value=self.kept_page + 1, pages=pages, count=len(self.kept), plural='s' if len(self.kept) != 1 else ''))
         self.kept_pager.prev.set_sensitive(self.kept_page > 0)
         self.kept_pager.next.set_sensitive(self.kept_page < pages - 1)
 
@@ -4344,7 +4341,7 @@ class Wallpapers(Gtk.Box):
         left = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
         modes = Gtk.Box(spacing=4, homogeneous=True)
         self.mode_buttons = {}
-        for mode, text in (("theme", "Theme colors"), ("wallpaper", "From the wallpaper")):
+        for mode, text in (("theme", tr("wallpaper.theme-colors")), ("wallpaper", tr("wallpaper.from-the-wallpaper"))):
             b = css(Gtk.Button(label=text), "choice")
             b.connect("clicked", lambda _, m=mode: self.set_mode(m))
             modes.pack_start(b, True, True, 0)
@@ -4372,11 +4369,11 @@ class Wallpapers(Gtk.Box):
             presets.pack_start(b, True, True, 0)
             self.preset_chips.append((chip, values))
         self.tuning.pack_start(presets, False, False, 0)
-        self.tint_row = slider_row("Tint", 0, 40, self.style["tint"] * 100,
+        self.tint_row = slider_row(tr("wallpaper.tint"), 0, 40, self.style["tint"] * 100,
                                    lambda v: self.tune("tint", v / 100), "%")
-        self.shade_row = slider_row("Background", -6, 6, self.style["shade"] * 100,
+        self.shade_row = slider_row(tr("wallpaper.background"), -6, 6, self.style["shade"] * 100,
                                     lambda v: self.tune("shade", v / 100))
-        self.light_row = slider_row("Accent", 55, 92, self.style["light"] * 100,
+        self.light_row = slider_row(tr("wallpaper.accent"), 55, 92, self.style["light"] * 100,
                                     lambda v: self.tune("light", v / 100), "%")
         for row in (self.tint_row, self.shade_row, self.light_row):
             self.tuning.pack_start(row, False, False, 0)
@@ -4385,15 +4382,15 @@ class Wallpapers(Gtk.Box):
         left.pack_start(label("PICTURE", ["heading"]), False, False, 4)
         if wallpaper.has_magick():
             self.edit_rows = {
-                "brightness": slider_row("Brightness", 40, 130, 100, lambda v: self.set_edit("brightness", v), "%"),
-                "saturation": slider_row("Saturation", 0, 150, 100, lambda v: self.set_edit("saturation", v), "%"),
-                "blur": slider_row("Blur", 0, 20, 0, lambda v: self.set_edit("blur", v)),
+                "brightness": slider_row(tr("wallpaper.brightness"), 40, 130, 100, lambda v: self.set_edit("brightness", v), "%"),
+                "saturation": slider_row(tr("wallpaper.saturation"), 0, 150, 100, lambda v: self.set_edit("saturation", v), "%"),
+                "blur": slider_row(tr("wallpaper.blur"), 0, 20, 0, lambda v: self.set_edit("blur", v)),
             }
             for row in self.edit_rows.values():
                 left.pack_start(row, False, False, 0)
         else:
             self.edit_rows = {}
-            left.pack_start(label("Install ImageMagick to edit the picture", ["muted", "small"]), False, False, 0)
+            left.pack_start(label(tr("wallpaper.install-imagemagick-to-edit-the"), ["muted", "small"]), False, False, 0)
         page.pack_start(left, True, True, 0)
 
         right = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
@@ -4439,7 +4436,7 @@ class Wallpapers(Gtk.Box):
         for i, (color, share) in enumerate(found):
             b = css(Gtk.Button(), "chip")
             b.add(Chip([color], 36, 22))
-            b.set_tooltip_text(f"#{color} · {share:.0%} of the picture")
+            b.set_tooltip_text(tr("wallpaper.of-the-picture", color=color, share=share))
             b.connect("clicked", lambda _, i=i: self.set_accent(i))
             self.accent_row.pack_start(b, False, False, 0)
         self.accent_row.show_all()
@@ -4525,15 +4522,15 @@ class Wallpapers(Gtk.Box):
     def about(self):
         kind, what = self.picked
         if kind == "wallhaven":
-            return f"{what['resolution'].replace('x', '×')} · {what['size'] / 1e6:.1f} MB · {what['category']}"
+            return tr("wallpaper.mb", value=what['resolution'].replace('x', '×'), value2=what['size'] / 1e6, category=what['category'])
         if kind == "saved":
             t = self.kept_theme(what)
             tone = wallpaper.tone_of(t["colors"], self.base)
-            colors = f" · {tone} theme colors" if self.mode_of(t["colors"]) == "theme" else ""
-            return f"{what} · {os.path.basename(t['wallpaper'])}{colors}" + (" · in use" if self.kept_in_use(t) else "")
+            colors = tr("wallpaper.theme-colors-2", tone=tone) if self.mode_of(t["colors"]) == "theme" else ""
+            return tr("wallpaper.text", what=what, file=os.path.basename(t['wallpaper']), colors=colors) + (tr("wallpaper.in-use") if self.kept_in_use(t) else "")
         info = GdkPixbuf.Pixbuf.get_file_info(what)
         size = f" · {info[1]}×{info[2]}" if info and info[0] else ""
-        return os.path.basename(what) + size + (" · in use" if self.in_use(what) else "")
+        return os.path.basename(what) + size + (tr("wallpaper.in-use") if self.in_use(what) else "")
 
     def showing(self, what):
         """The picked one is what the controls already have."""
@@ -4566,45 +4563,45 @@ class Wallpapers(Gtk.Box):
         elif self.asking == "delete-many":
             n, s = len(self.selected), "s" if len(self.selected) != 1 else ""
             if self.selecting == "saved":
-                info.set_text(f"Forget {n} saved theme{s}?")
+                info.set_text(tr("wallpaper.forget-saved-theme", n=n, s=s))
             else:
-                info.set_text(f"Delete {n} wallpaper{s} and their edited copies?")
+                info.set_text(tr("wallpaper.delete-wallpaper-and-their-edited", n=n, s=s))
             info.get_style_context().remove_class("muted")
-            button("No", lambda: self.ask(None))
-            button("Forget" if self.selecting == "saved" else "Delete", self.delete_selected, yes=True)
+            button(tr("wallpaper.no"), lambda: self.ask(None))
+            button(tr("wallpaper.forget") if self.selecting == "saved" else tr("wallpaper.delete"), self.delete_selected, yes=True)
         elif self.selecting:
             n = len(self.selected)
-            verb = "Forget" if self.selecting == "saved" else "Delete"
-            info.set_text(f"{n} selected" if n else f"Pick the ones to {verb.lower()}")
-            button("All unused", self.select_unused)
-            button("Cancel", self.stop_select)
+            verb = tr("wallpaper.forget") if self.selecting == "saved" else tr("wallpaper.delete")
+            info.set_text(tr("wallpaper.selected", n=n) if n else tr("wallpaper.pick-the-ones-to", verb=verb.lower()))
+            button(tr("wallpaper.all-unused"), self.select_unused)
+            button(tr("wallpaper.cancel"), self.stop_select)
             button(f"{verb}…", lambda: self.ask("delete-many"), yes=True)
             buttons[-1].set_sensitive(n > 0)
         elif self.asking == "save":
             colors = dict(self.screen[2])
             tone = wallpaper.tone_of(colors, self.base)
-            colors = " and these colors" if self.mode_of(colors) == "wallpaper" else f" with the {tone} theme colors"
-            info.set_text(f"Keep this wallpaper{colors}?")
+            colors = tr("wallpaper.and-these-colors") if self.mode_of(colors) == "wallpaper" else tr("wallpaper.with-the-theme-colors", tone=tone)
+            info.set_text(tr("wallpaper.keep-this-wallpaper", colors=colors))
             info.get_style_context().remove_class("muted")
-            button("No", lambda: self.ask(None))
-            button("Save", self.save, yes=True)
+            button(tr("wallpaper.no"), lambda: self.ask(None))
+            button(tr("wallpaper.save"), self.save, yes=True)
         elif self.asking == "delete":
             kind, what = self.picked
-            info.set_text(f"Forget {what}?" if kind == "saved" else f"Delete {os.path.basename(what)}?")
+            info.set_text(tr("wallpaper.forget-2", what=what) if kind == "saved" else tr("wallpaper.delete-2", file=os.path.basename(what)))
             info.get_style_context().remove_class("muted")
-            button("No", lambda: self.ask(None))
-            button("Forget" if kind == "saved" else "Delete", self.delete, yes=True)
+            button(tr("wallpaper.no"), lambda: self.ask(None))
+            button(tr("wallpaper.forget") if kind == "saved" else tr("wallpaper.delete"), self.delete, yes=True)
         elif self.asking == "name":
             # The wallpaper and colors saved now, under a name
-            info.set_text("Keep it as")
+            info.set_text(tr("wallpaper.keep-it-as"))
             info.get_style_context().remove_class("muted")
             self.bar.child_set_property(info, "expand", False)
-            entry = css(Gtk.Entry(hexpand=True, max_length=40, placeholder_text="Name"), "search", "small",
+            entry = css(Gtk.Entry(hexpand=True, max_length=40, placeholder_text=tr("wallpaper.name")), "search", "small",
                         "in-bar")
             entry.set_text(self.name_draft)
             self.bar.pack_start(entry, True, True, 0)
-            button("No", lambda: self.ask(None))
-            button("Keep", lambda: self.keep(entry.get_text().strip()), yes=True)
+            button(tr("wallpaper.no"), lambda: self.ask(None))
+            button(tr("wallpaper.keep"), lambda: self.keep(entry.get_text().strip()), yes=True)
             keep_button = buttons[-1]
             keep_button.set_size_request(70, -1)  # "Keep" or "Replace", the entry doesn't move
             entry.set_activates_default(False)
@@ -4613,54 +4610,54 @@ class Wallpapers(Gtk.Box):
             def named(_):
                 self.name_draft = entry.get_text()
                 name = self.name_draft.strip()
-                keep_button.set_label("Replace" if self.kept_theme(name) else "Keep")
+                keep_button.set_label(tr("wallpaper.replace") if self.kept_theme(name) else tr("wallpaper.keep"))
                 keep_button.set_sensitive(bool(name) and "/" not in name and not name.startswith("."))
             entry.connect("changed", named)
             named(None)
             GLib.idle_add(lambda: entry.grab_focus() or entry.set_position(-1) or False)
         elif self.trying() or self.wanted() != self.screen:
             if self.wanted() != self.screen:
-                info.set_text("Changed: try it on the desktop before saving")
+                info.set_text(tr("wallpaper.changed-try-it-on-the"))
             else:
-                info.set_text("Trying it on the desktop · not saved yet")
+                info.set_text(tr("wallpaper.trying-it-on-the-desktop"))
             if self.trying():
-                button("Discard", self.discard)
+                button(tr("wallpaper.discard"), self.discard)
             else:
-                button("Undo", self.as_saved)
+                button(tr("wallpaper.undo"), self.as_saved)
             if picked_new:
-                button("Try this one", self.try_picked)
+                button(tr("wallpaper.try-this-one"), self.try_picked)
             if self.wanted() != self.screen:
-                button("Try", self.apply, yes=True)
+                button(tr("wallpaper.try"), self.apply, yes=True)
             elif self.trying():
-                button("Preview", self.start_preview)
-                button("Save…", lambda: self.ask("save"), yes=True)
+                button(tr("wallpaper.preview"), self.start_preview)
+                button(tr("wallpaper.save-2"), lambda: self.ask("save"), yes=True)
         elif self.picked:
             info.set_text(self.about())
             kind, what = self.picked
             if kind == "wallhaven":
-                button("Wallhaven", lambda: spawn("xdg-open", what["url"]))
+                button(tr("wallpaper.wallhaven"), lambda: spawn("xdg-open", what["url"]))
             elif kind == "saved":
                 if not self.kept_in_use(self.kept_theme(what)):
-                    button("Forget…", lambda: self.ask("delete"))
+                    button(tr("wallpaper.forget-3"), lambda: self.ask("delete"))
             elif wallpaper.can_delete(what) and not self.in_use(what):
-                button("Delete…", lambda: self.ask("delete"))
+                button(tr("wallpaper.delete-3"), lambda: self.ask("delete"))
             if picked_new:
-                button("Try it", self.try_picked, yes=True)
+                button(tr("wallpaper.try-it"), self.try_picked, yes=True)
         elif tab == "saved":
-            info.set_text("Pick a theme to try it on the desktop")
+            info.set_text(tr("wallpaper.pick-a-theme-to-try"))
         else:
-            info.set_text("Pick a wallpaper to try it on the desktop")
+            info.set_text(tr("wallpaper.pick-a-wallpaper-to-try"))
         if tab == "saved" and not (self.busy or self.asking or self.trying() or self.wanted() != self.screen):
             # What is saved now, kept for later; first, before the picked one's buttons
             def ask_name():
                 self.name_draft = os.path.splitext(os.path.basename(wallpaper.original(self.saved_path)[0]))[0]
                 self.ask("name")
-            button("Save as…", ask_name)
+            button(tr("wallpaper.save-as"), ask_name)
             buttons.insert(0, buttons.pop())
         if tab in ("downloaded", "saved") and not (self.busy or self.asking or self.selecting or self.trying()
                                                    or self.wanted() != self.screen):
             # Many at once: the ones not in use any more
-            button("Select…", lambda: self.start_select("saved" if tab == "saved" else "local"))
+            button(tr("wallpaper.select"), lambda: self.start_select("saved" if tab == "saved" else "local"))
             buttons.insert(0, buttons.pop())
         for b in buttons:
             self.bar.pack_start(b, False, False, 0)
@@ -4689,7 +4686,7 @@ class Wallpapers(Gtk.Box):
             # Deleted since the list was made
             self.picked = None
             self.show_local()
-            self.fail(f"{os.path.basename(what)} is gone")
+            self.fail(tr("wallpaper.is-gone", file=os.path.basename(what)))
             return
         if kind == "local":
             self.use_source(what)
@@ -4699,20 +4696,20 @@ class Wallpapers(Gtk.Box):
             if not t or not os.path.exists(t["wallpaper"]):
                 self.picked = None
                 self.show_kept()
-                self.fail(f"{what} is gone")
+                self.fail(tr("wallpaper.is-gone-2", what=what))
                 return
             self.use_kept(t)
             return
-        self.set_busy("Downloading…")
+        self.set_busy(tr("wallpaper.downloading"))
 
         def progress(f):
-            GLib.idle_add(self.set_busy, f"Downloading… {int(f * 100)}%")
+            GLib.idle_add(self.set_busy, tr("wallpaper.downloading-2", value=int(f * 100)))
 
         def work():
             try:
                 path = wallpaper.download(what, progress)
             except OSError as e:
-                GLib.idle_add(self.fail, f"Couldn't download it: {getattr(e, 'reason', e)}")
+                GLib.idle_add(self.fail, tr("wallpaper.couldn-t-download-it", value=getattr(e, 'reason', e)))
                 return
             GLib.idle_add(lambda: self.got_download(str(path)) or False)
         threading.Thread(target=work, daemon=True).start()
@@ -4728,7 +4725,7 @@ class Wallpapers(Gtk.Box):
         self.edits = dict(wallpaper.EDIT)
         self.accent = None
         self.override = None
-        self.busy = "Reading its colors…"
+        self.busy = tr("wallpaper.reading-its-colors")
         self.load_colors(then=self.apply)
 
     def use_kept(self, t):
@@ -4737,13 +4734,13 @@ class Wallpapers(Gtk.Box):
         self.source = t["wallpaper"]
         self.edits = dict(wallpaper.EDIT)
         self.take_colors(t["colors"])
-        self.busy = "Reading its colors…"
+        self.busy = tr("wallpaper.reading-its-colors")
         self.load_colors(then=self.apply)
 
     def keep(self, name):
         """What is saved, kept for later under a name (`theme save`)."""
         self.asking = None
-        self.set_busy("Keeping it…")
+        self.set_busy(tr("wallpaper.keeping-it"))
 
         def work():
             err = wallpaper.keep(name)
@@ -4753,19 +4750,19 @@ class Wallpapers(Gtk.Box):
     def kept_done(self, name, err):
         self.busy = None
         if err:
-            return self.fail(f"Couldn't keep it: {err}")
+            return self.fail(tr("wallpaper.couldn-t-keep-it", err=err))
         self.picked = ("saved", name)
         self.show_kept()
         self.show_bar()
-        self.bar.get_children()[0].set_text(f"Kept as {name}")
+        self.bar.get_children()[0].set_text(tr("wallpaper.kept-as", name=name))
         return False
 
     def apply(self):
         """Puts the picture, its edits and the colors on the desktop."""
-        if self.busy and self.busy != "Reading its colors…":
+        if self.busy and self.busy != tr("wallpaper.reading-its-colors"):
             return
         wanted, colors, edits, source = self.wanted(), self.colors(), dict(self.edits), self.source
-        self.set_busy("Editing the picture…" if edits != wallpaper.EDIT else "Applying…")
+        self.set_busy(tr("wallpaper.editing-the-picture") if edits != wallpaper.EDIT else tr("wallpaper.applying"))
         same_colors = wanted[2] == self.screen[2]
 
         def work():
@@ -4787,7 +4784,7 @@ class Wallpapers(Gtk.Box):
 
     def save(self):
         self.asking = None
-        self.set_busy("Saving…")
+        self.set_busy(tr("wallpaper.saving"))
         colors = dict(self.screen[2])
         path = str(wallpaper.edit(self.screen[0], **dict(zip(wallpaper.EDIT, self.screen[1]))))
 
@@ -4803,13 +4800,13 @@ class Wallpapers(Gtk.Box):
         self.show_local()
         self.show_kept()
         self.show_bar()
-        self.bar.get_children()[0].set_text("Saved")
+        self.bar.get_children()[0].set_text(tr("wallpaper.saved"))
         return False
 
     def discard(self):
         self.asking = None
         same_colors = self.screen[2] == self.saved_key[2]
-        self.set_busy("Putting it back…")
+        self.set_busy(tr("wallpaper.putting-it-back"))
 
         def work():
             self.restore(same_colors)
@@ -4873,22 +4870,22 @@ class Wallpapers(Gtk.Box):
         self.slim.pack_start(label(ICON["image"], ["icon", "muted"]), False, False, 0)
         self.terminal_button = icon_button("terminal", css=["tab"], on_click=lambda: self.show_examples(
             not self.with_examples))
-        self.terminal_button.set_tooltip_text("Examples: a terminal with ufetch and a notification")
+        self.terminal_button.set_tooltip_text(tr("wallpaper.examples-a-terminal-with-ufetch"))
         css(self.terminal_button, "on", on=self.with_examples)
         self.slim.pack_start(self.terminal_button, False, False, 0)
         name = os.path.basename(self.source)
         name = name if len(name) <= 28 else name[:27] + "…"
         tone = wallpaper.tone_of(dict(self.screen[2]), self.base)
-        colors = " · wallpaper colors" if self.mode_of(dict(self.screen[2])) == "wallpaper" else f" · {tone} theme colors"
+        colors = tr("wallpaper.wallpaper-colors") if self.mode_of(dict(self.screen[2])) == "wallpaper" else tr("wallpaper.theme-colors-2", tone=tone)
         self.slim_stack = Gtk.Stack(transition_type=Gtk.StackTransitionType.CROSSFADE, transition_duration=150)
         for page, text, buttons in (
-                ("preview", f"Previewing {name}{colors}",
-                 (("Adjust", self.end_preview, False),
-                  ("Don't keep", lambda: self.end_preview(self.discard), False),
-                  ("Keep…", lambda: self.show_slim("save"), True))),
-                ("save", f"Keep {name}{colors}?",
-                 (("No", lambda: self.slim_stack.set_visible_child_name("preview"), False),
-                  ("Save", lambda: self.end_preview(self.save), True)))):
+                ("preview", tr("wallpaper.previewing", name=name, colors=colors),
+                 ((tr("wallpaper.adjust"), self.end_preview, False),
+                  (tr("wallpaper.don-t-keep"), lambda: self.end_preview(self.discard), False),
+                  (tr("wallpaper.keep-2"), lambda: self.show_slim("save"), True))),
+                ("save", tr("wallpaper.keep-3", name=name, colors=colors),
+                 ((tr("wallpaper.no"), lambda: self.slim_stack.set_visible_child_name("preview"), False),
+                  (tr("wallpaper.save"), lambda: self.end_preview(self.save), True)))):
             row = Gtk.Box(spacing=8)
             question = label(text, ["muted"] if page == "preview" else [])
             question.set_valign(Gtk.Align.CENTER)
@@ -4944,8 +4941,8 @@ class Wallpapers(Gtk.Box):
             css(self.terminal_button, "on", on=on)
         if on and not self.sample_notes and self.previewing:
             picture = wallpaper.square(self.source)
-            notes = [["Wallpaper preview", "A notification, with these colors"],
-                     ["-i", str(picture), os.path.basename(self.source), "And one with a picture"]
+            notes = [[tr("wallpaper.wallpaper-preview"), tr("wallpaper.a-notification-with-these-colors")],
+                     ["-i", str(picture), os.path.basename(self.source), tr("wallpaper.and-one-with-a-picture")]
                      if picture else None]
             self.sample_notes = [run("notify-send", "-a", "Wallpaper", "-c", "preview", "-p", *n)
                                  for n in notes if n]
@@ -5063,7 +5060,7 @@ class Wallpapers(Gtk.Box):
         self.show_local()
         self.show_kept()
         self.show_bar()
-        done = f"Forgot {n} theme" if kind == "saved" else f"Deleted {n} wallpaper"
+        done = tr("wallpaper.forgot-theme", n=n) if kind == "saved" else tr("wallpaper.deleted-wallpaper", n=n)
         self.bar.get_children()[0].set_text(done + ("s" if n != 1 else ""))
 
     def delete(self):
