@@ -43,10 +43,13 @@
     "custom/space#before-media": { "format": " ", "expand": true, "tooltip": false },
     "custom/space#after-media": { "format": " ", "expand": true, "tooltip": false },
 
-    // Media: app icon, artist and title, only while something is playing.
+    // Media: app icon, artist and title; dimmed while paused (still a way
+    // back to it), gone when nothing is loaded (an empty format hides the
+    // module, so no invisible spot is left under the mouse).
     // Left click: mini player, right click: focus the app
     "mpris": {
         "format": "{player_icon}  {artist} · {title}",
+        "format-stopped": "",
         "max-length": 60,
         "player-icons": {
             "default": "",

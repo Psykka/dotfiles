@@ -1,8 +1,8 @@
 #!/bin/sh
-# Clicks on the media island only do something while it is visible, that
-# is, while something is playing (when paused, the island is hidden but
-# still under the mouse). Usage: media-click.sh panel|focus|toggle
-[ "$(playerctl status 2>/dev/null)" = Playing ] || exit 0
+# Clicks on the media island: it shows while something is playing or
+# paused (dimmed), and is hidden when nothing is loaded; a click then (the
+# bar redrawing late) does nothing. Usage: media-click.sh panel|focus|toggle
+case "$(playerctl status 2>/dev/null)" in Playing|Paused) ;; *) exit 0 ;; esac
 case $1 in
     panel)  exec ~/.config/waybar/panel.py media ;;
     focus)  exec ~/.config/waybar/media-focus.sh ;;

@@ -15,7 +15,8 @@ The popups really open, on the focused display. The media one plays the
 pretend player (dev/fake-player.py) and leaves any real one alone; the
 Bluetooth one has pretend devices (dev/fake_bluetooth.py), the sound
 one a pretend sound server (dev/fake_audio.py) and the VPN one a pretend
-daemon (dev/fake_vpn.py). The
+daemon (dev/fake_vpn.py), and the media one a pretend Spotify under the
+player (dev/fake_spotify.py). The
 wallpaper one tries a wallpaper already downloaded on the desktop, then
 discards it: nothing is saved; its saved themes are pretend ones in a
 folder of their own ($THEME_SAVED), gone at the end. Not a stow package: nothing here is linked
@@ -148,6 +149,33 @@ def steps(mode):
             (1200, "unmute", lambda m: m.toggle_mute(), False),
             (4000, "back to progress", lambda _: None, False),
             (1500, "player quits", lambda _: stop_fake_player(), False),
+            # Spotify's lists under the player (fake_spotify.py, set up in run())
+            (1500, "playlists next page", lambda m: m.browser.playlists.turn(1), False),
+            (500, "last page", lambda m: (m.browser.playlists.turn(1), m.browser.playlists.turn(1)), False),
+            (500, "play a playlist", lambda m: m.browser.play(m.browser.playlists.items[-1]), False),
+            (800, "tab Queue", lambda m: m.browser.show_tab("queue"), False),
+            (1000, "track changes", lambda m: m.browser.track_changed(), False),
+            (1000, "tab Search", lambda m: m.browser.show_tab("search"), False),
+            (500, "search words", lambda m: (m.browser.entry.set_text("deftones"), m.browser.search_now()), False),
+            (1000, "results next page", lambda m: m.browser.results.turn(1), False),
+            (500, "search finds nothing", lambda m: (m.browser.entry.set_text("nothing"),
+                                                    m.browser.search_now()), False),
+            (1000, "search fails", lambda m: (m.browser.entry.set_text("fail"), m.browser.search_now()), False),
+            (1000, "search cleared", lambda m: (m.browser.entry.set_text(""), m.browser.search_now()), False),
+            (500, "tab Devices", lambda m: m.browser.show_tab("devices"), False),
+            (1000, "move to the phone", lambda m: m.browser.transfer(m.browser.devices.items[1]), False),
+            (1500, "tab Account", lambda m: m.browser.show_tab("account"), False),
+            # The two logins gone, then back
+            (800, "player logged out", lambda m: (fake_spotify().log_out_soloist(), m.browser.check_account()), False),
+            (800, "tab Playlists", lambda m: m.browser.show_tab("playlists"), False),
+            (800, "play without it", lambda m: m.browser.play(m.browser.playlists.items[0]), False),
+            (800, "tab Account again", lambda m: m.browser.show_tab("account"), False),
+            (800, "library logged out", lambda m: (fake_spotify().log_out(), m.browser.check_account()), False),
+            (800, "tab Playlists asks", lambda m: m.browser.show_tab("playlists"), False),
+            (800, "go log in", lambda m: m.browser.play(m.browser.playlists.items[0]), False),
+            (800, "log in (browser)", lambda m: m.browser.library_button(), False),
+            (2500, "player back", lambda m: (fake_spotify().log_in_soloist(), m.browser.check_account()), False),
+            (1000, "tab Playlists again", lambda m: m.browser.show_tab("playlists"), False),
             (2000, "end", lambda _: None, False),
         ]
     if mode == "bluetooth":
@@ -258,6 +286,11 @@ def stop_fake_player():
         fake.pop().terminate()
 
 
+def fake_spotify():
+    import fake_spotify
+    return fake_spotify
+
+
 def name_entry(w):
     from gi.repository import Gtk
     return next(c for c in w.bar.get_children() if isinstance(c, Gtk.Entry))
@@ -287,6 +320,10 @@ def run(mode, shots):
         sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
         import fake_audio
         panel.audio = fake_audio
+    if mode == "media":
+        sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+        import fake_spotify
+        panel.spotify = fake_spotify
     if mode in ("vpn", "menu"):
         sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
         import fake_vpn
@@ -313,6 +350,8 @@ def run(mode, shots):
         win = found.get("panel")
         if win:
             size = (win.get_allocated_width(), win.get_allocated_height())
+            if size <= (1, 1):
+                return True  # not on screen yet (a slow popup to build)
             if state["size"] and size != state["size"]:
                 c = changes.setdefault(state["step"], [state["size"], size, 0, state["allowed"]])
                 c[1], c[2] = size, c[2] + 1

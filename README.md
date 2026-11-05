@@ -33,6 +33,9 @@ from the start.
 
 - **Media**: click the song for a compact player with the cover, seek and
   volume (scroll on the speaker button, or click it for the volume line).
+  The song stays on the bar, dimmed, while paused. With Spotify set up,
+  under the player: your playlists, the queue, search (`Super + M`), the
+  devices, and an Account tab for its two logins.
 - **Calendar**: click the clock. Today in the middle of a fixed six-week
   month, and the last 30 notifications beside it.
 - **Updates**: the cube shows pending packages (and a new Fedora release),
@@ -92,6 +95,7 @@ the same colors.
 | `Super + /` | All keybindings |
 | `Super + Esc` | System menu |
 | `Super + V` | Clipboard history |
+| `Super + M` | Spotify search (the media popup) |
 | `Print`, `Shift + Print` / `Super + Shift + S` | Screenshot of the screen, of an area |
 | `Super + 1`…`6`, `Super + Shift + 1`…`6` | Go to workspace, move the window there |
 | `Super + scroll` | Previous / next workspace |

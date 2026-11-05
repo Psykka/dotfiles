@@ -42,7 +42,14 @@ No Bluetooth adapter? `dev/fake_bluetooth.py` stands in for
 panel-sizes puts it in place for the `bluetooth` page. Likewise
 `dev/fake_audio.py` stands in for `audio.py` on the `sound` page (many
 devices and apps, a mic with three gains), so tests never touch the
-user's real volumes or apps.
+user's real volumes or apps. `dev/fake_spotify.py` stands in for
+`spotify.py` under the media popup's player (playlists over pages, a
+search that fails, devices, both logins gone and back), so tests never
+reach the user's Spotify.
+
+Content still loading (pictures, lists) shows its skeleton (`Pulse` in
+`panel.py`: a block breathing in @bg2, where the thing will be), never an
+empty gap; the `Spinner` is for actions under way (connecting...).
 
 `--shots DIR` also saves a screenshot after each step (look at them with
 the Read tool). It needs the user's live sway session (`$SWAYSOCK`); it

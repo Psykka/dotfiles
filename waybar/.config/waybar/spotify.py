@@ -10,7 +10,8 @@ app has to list. Every call here blocks: the popup makes them in threads.
 
 dev/fake_spotify.py has the same calls, for tests without Spotify.
 
-Usage: spotify.py login            log in (opens the browser)
+Usage: spotify.py login [--notify] log in (opens the browser); --notify
+                                   says how it went in a notification
        spotify.py length TRACK_ID  a track's length in ms (for soloist-mpris)
 """
 import base64
@@ -39,6 +40,9 @@ REDIRECT = ("127.0.0.1", 8989, "/login")
 SCOPES = ("playlist-read-private playlist-read-collaborative user-library-read "
           "user-read-playback-state user-modify-playback-state user-read-currently-playing")
 LOGIN_TIMEOUT_S = 300
+# The login runs on its own (the popup closes when the browser is clicked);
+# its pid here says one is waiting
+LOGIN_PID = os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "spotify-login.pid")
 # The access token (an hour long) between popups, so each one doesn't
 # refresh it; only this user can read it
 TOKEN_FILE = os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "spotify-token.json")
@@ -134,6 +138,37 @@ def login():
                        client_id=cid, code_verifier=verifier))
 
 
+def start_login():
+    """Login in a process of its own, which tells how it went in a
+    notification; login_pending() is true until it's over."""
+    if login_pending():
+        return
+    p = subprocess.Popen([os.path.abspath(__file__), "login", "--notify"], start_new_session=True,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    with open(LOGIN_PID, "w") as f:
+        f.write(str(p.pid))
+
+
+def login_pid():
+    try:
+        pid = int(open(LOGIN_PID).read())
+        if b"spotify.py" in open(f"/proc/{pid}/cmdline", "rb").read():
+            return pid
+    except (OSError, ValueError):
+        pass
+    return None
+
+
+def login_pending():
+    return login_pid() is not None
+
+
+def cancel_login():
+    pid = login_pid()
+    if pid:
+        os.kill(pid, 15)
+
+
 def logout():
     subprocess.run(["secret-tool", "clear", "service", "spotify", "key", "refresh-token"])
     try:
@@ -211,8 +246,17 @@ def names(people):
     return ", ".join(p.get("name", "") for p in people or [] if p)
 
 
-def row(kind, uri, title, sub):
-    return {"kind": kind, "uri": uri, "title": title or "", "sub": sub or ""}
+def row(kind, uri, title, sub, images=None):
+    return {"kind": kind, "uri": uri, "title": title or "", "sub": sub or "", "image": picture(images)}
+
+
+def picture(images):
+    """The smallest picture still sharp in a row (Spotify lists them
+    largest first; some have no size)."""
+    images = [i for i in images or [] if i and i.get("url")]
+    big_enough = [i for i in images if (i.get("width") or 0) >= 60]
+    pick = big_enough[-1] if big_enough else (images[-1] if images else None)
+    return pick["url"] if pick else None
 
 
 def playlists():
@@ -228,7 +272,7 @@ def playlists():
                 total = (p.get("items") or p.get("tracks") or {}).get("total")
                 owner = (p.get("owner") or {}).get("display_name") or ""
                 sub = ", ".join(x for x in (owner, f"{total} songs" if total is not None else "") if x)
-                rows.append(row("playlist", p["uri"], p.get("name"), sub))
+                rows.append(row("playlist", p["uri"], p.get("name"), sub, p.get("images")))
         offset += PAGE
         if not page.get("next") or offset >= 500:
             return rows
@@ -240,18 +284,20 @@ def search(words):
     q = urllib.parse.urlencode({"q": words, "type": "artist,track,album,playlist", "limit": 10})
     r = api("GET", "search?" + q)
     items = lambda k: [x for x in (r.get(k) or {}).get("items") or [] if x]
-    out = [row("artist", a["uri"], a.get("name"), "Artist") for a in items("artists")[:1]]
-    out += [row("track", t["uri"], t.get("name"), names(t.get("artists"))) for t in items("tracks")]
-    out += [row("album", a["uri"], a.get("name"), "Album · " + names(a.get("artists"))) for a in items("albums")[:4]]
-    out += [row("playlist", p["uri"], p.get("name"), "Playlist · " + ((p.get("owner") or {}).get("display_name") or ""))
-            for p in items("playlists")[:4]]
+    out = [row("artist", a["uri"], a.get("name"), "Artist", a.get("images")) for a in items("artists")[:1]]
+    out += [row("track", t["uri"], t.get("name"), names(t.get("artists")), (t.get("album") or {}).get("images"))
+            for t in items("tracks")]
+    out += [row("album", a["uri"], a.get("name"), "Album · " + names(a.get("artists")), a.get("images"))
+            for a in items("albums")[:4]]
+    out += [row("playlist", p["uri"], p.get("name"), "Playlist · " + ((p.get("owner") or {}).get("display_name") or ""),
+                p.get("images")) for p in items("playlists")[:4]]
     return out
 
 
 def queue():
     r = api("GET", "me/player/queue") or {}
-    return [row("track", t["uri"], t.get("name"), names(t.get("artists") or (t.get("show") and [t["show"]])))
-            for t in r.get("queue") or [] if t]
+    return [row("track", t["uri"], t.get("name"), names(t.get("artists") or (t.get("show") and [t["show"]])),
+                (t.get("album") or t).get("images")) for t in r.get("queue") or [] if t]
 
 
 def devices():
@@ -303,14 +349,24 @@ def transfer(device):
 
 def main():
     args = sys.argv[1:]
-    try:
-        if args == ["login"]:
+    if args[:1] == ["login"]:
+        tell = "--notify" in args
+        try:
             login()
-            print("Logged in")
-        elif len(args) == 2 and args[0] == "length":
-            print(length(args[1]) or "")
-        else:
-            sys.exit(__doc__.strip())
+            done = ("Logged in to your Spotify library", "Playlists and search are in the media popup now")
+        except (Failed, NotLoggedIn) as e:
+            done = ("Spotify login didn't finish", str(e) or "Spotify said no")
+        finally:
+            if login_pid() == os.getpid():
+                os.remove(LOGIN_PID)
+        if tell:
+            subprocess.run(["notify-send", "-a", "Spotify", "-i", "spotify", *done])
+        print(": ".join(done))
+        return
+    if len(args) != 2 or args[0] != "length":
+        sys.exit(__doc__.strip())
+    try:
+        print(length(args[1]) or "")
     except NotLoggedIn:
         sys.exit("Not logged in: spotify.py login")
     except Failed as e:

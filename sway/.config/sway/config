@@ -25,6 +25,9 @@ bindsym $mod+slash exec ~/.config/sway/keys.sh
 # System menu: settings, tools and power
 bindsym $mod+Escape exec ~/.config/sway/menu.sh
 
+# Spotify search (the media popup, on its Search tab)
+bindsym $mod+m exec ~/.config/waybar/panel.py media search
+
 # Volume: media keys or Super+=/-, in steps of 5
 bindsym --locked XF86AudioRaiseVolume exec ~/.config/sway/volume.sh up
 bindsym --locked XF86AudioLowerVolume exec ~/.config/sway/volume.sh down

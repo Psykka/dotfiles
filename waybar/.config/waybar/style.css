@@ -56,23 +56,17 @@ window#waybar {
 
 #custom-space-before-media, #custom-space-after-media { background: transparent; }
 
-/* The media island slides down from the top when something starts playing
-   and back up when it pauses or stops. Shifted up by the bar height with
-   equal margins (-32 top, +32 bottom), so it asks for no extra room and the
-   bar keeps its size. (It keeps its width while hidden; the spacers around
-   it keep the layout centered anyway.) */
+/* The media island: dimmed while paused, a fade back when it plays again
+   (or starts). When nothing is loaded the module itself is hidden
+   (format-stopped is empty in config.jsonc): nothing left under the mouse. */
 #mpris {
-    transition: margin-top 260ms ease, margin-bottom 260ms ease, opacity 260ms ease, color 150ms ease;
+    transition: opacity 260ms ease, color 150ms ease;
 }
-#mpris.paused, #mpris.stopped {
-    margin-top: -32px;
-    margin-bottom: 32px;
-    opacity: 0;
-}
+#mpris.paused { opacity: 0.5; }
 #mpris.playing { animation: media-in 300ms ease-out; }
 @keyframes media-in {
-    from { margin-top: -32px; margin-bottom: 32px; opacity: 0; }
-    to { margin-top: 0; margin-bottom: 0; opacity: 1; }
+    from { opacity: 0.5; }
+    to { opacity: 1; }
 }
 
 /* Updates island: slides down when there are updates and back up when
