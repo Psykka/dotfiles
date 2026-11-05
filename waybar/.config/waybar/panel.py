@@ -63,7 +63,7 @@ ICON = {
     "moon": "\uf186", "sun": "\uf185",
     "heart": "\uf004", "list": "\uf03a", "disc": "\uf51f", "user": "\uf007", "tv": "\uf26c",
     "book": "\uf02d", "search": "\uf002", "gear": "\uf013", "shuffle": "\uf074", "repeat": "\uf363",
-    "queue": "\uf0cb",
+    "queue": "\uf0cb", "external": "\uf35d",
 }
 
 CSS = b"""
@@ -864,10 +864,11 @@ class SpotifyLogin(Gtk.Box):
 class SpotifyKey(Gtk.Box):
     """A key kept in the keyring, as a card: its name, where it comes from
     (or what went wrong), and a field that hides what's pasted, with Save;
-    once kept, the field says so and the button removes it. The same size
-    in every state."""
+    once kept, the field says so and the button removes it. A button beside
+    them opens the page the key is copied from. The same size in every
+    state."""
 
-    def __init__(self, title, hint, have, save, remove, after):
+    def __init__(self, title, hint, page, have, save, remove, after):
         super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=8)
         css(self, "card", "key")
         self.hint_text, self.have, self.save, self.remove, self.after = hint, have, save, remove, after
@@ -886,6 +887,11 @@ class SpotifyKey(Gtk.Box):
         self.button.add(label(xalign=0.5, width=11))
         self.button.connect("clicked", lambda _: self.clicked())
         row.pack_start(self.button, False, False, 0)
+        opener = icon_button("external", css=["filter"], on_click=lambda: spawn("xdg-open", page))
+        opener.set_valign(Gtk.Align.CENTER)
+        opener.set_size_request(CHIP_H, CHIP_H)
+        opener.set_tooltip_text(tr("spotify.key-open-page"))
+        row.pack_start(opener, False, False, 0)
         self.pack_start(row, False, False, 0)
         self.kept = False
 
@@ -1049,9 +1055,11 @@ class Spotify(Gtk.Box):
         keys = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=GAP)
         keys.pack_start(label(tr("spotify.keys-heading"), ["heading"]), False, False, 0)
         self.soloist_key = SpotifyKey(tr("spotify.soloist-key-title"), tr("spotify.soloist-key-hint"),
+                                      "https://developer.spotify.com/dashboard/soloist",
                                       spotify.soloist_key_set, spotify.set_soloist_key, spotify.remove_soloist_key,
                                       self.check_account)
         self.client_key = SpotifyKey(tr("spotify.client-id-title"), tr("spotify.client-id-hint"),
+                                     "https://developer.spotify.com/dashboard",
                                      spotify.client_id, spotify.set_client_id, spotify.remove_client_id,
                                      self.check_account)
         keys.pack_start(self.soloist_key, False, False, 0)
