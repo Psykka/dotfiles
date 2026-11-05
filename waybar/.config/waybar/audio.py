@@ -272,7 +272,7 @@ def fix():
     if not default:
         default = sources[0]
         run("pactl", "set-default-source", default["name"])
-        done.append(tr("sound.input-set-to", value=default['properties'].get('device.nick', default['name'])))
+        done.append(tr("sound.input-set-to", device=default['properties'].get('device.nick', default['name'])))
     if default["mute"]:
         run("pactl", "set-source-mute", default["name"], "0")
         done.append(tr("sound.unmuted-the-input"))
@@ -289,7 +289,7 @@ def fix():
             # Boosts sit at 0 on purpose; raising them only adds noise
             if value == 0 and "boost" not in c["name"].lower():
                 value = saved.get(control) or DEFAULT_GAIN
-                done.append(tr("sound.hardware-gain-raised-from-0", name=c['name'], index=c['index'], value=value))
+                done.append(tr("sound.hardware-gain-raised", name=c['name'], index=c['index'], percent=value))
             elif not c["on"]:
                 done.append(tr("sound.hardware-capture-turned-on", name=c['name'], index=c['index']))
             if value != c["percent"] or not c["on"]:

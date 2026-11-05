@@ -53,7 +53,7 @@ def title(o):
 
 
 def mode_text(m):
-    return tr("displays.hz", width=m['width'], height=m['height'], value=round(m['refresh'] / 1000))
+    return tr("displays.mode", width=m['width'], height=m['height'], rate=round(m['refresh'] / 1000))
 
 
 def modes(o):

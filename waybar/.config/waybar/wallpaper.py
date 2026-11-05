@@ -59,7 +59,7 @@ IMAGES = (".jpg", ".jpeg", ".png", ".webp")
 API = "https://wallhaven.cc/api/v1/search"
 SORTS = [("relevance", tr("wallpaper.relevance")), ("date_added", tr("wallpaper.latest")), ("toplist", tr("wallpaper.top")), ("views", tr("wallpaper.views")),
          ("favorites", tr("wallpaper.favorites")), ("random", tr("wallpaper.random"))]
-RANGES = [("1d", tr("wallpaper.day")), ("1w", tr("wallpaper.week")), ("1M", tr("wallpaper.month")), ("3M", tr("wallpaper.3-months")), ("1y", tr("wallpaper.year"))]
+RANGES = [("1d", tr("wallpaper.day")), ("1w", tr("wallpaper.week")), ("1M", tr("wallpaper.month")), ("3M", tr("wallpaper.range-3-months")), ("1y", tr("wallpaper.year"))]
 SIZES = [("", tr("wallpaper.any")), ("1920x1080", "1080p"), ("2560x1440", "1440p"), ("3840x2160", "4K")]
 RATIOS = [("", tr("wallpaper.any")), ("16x9", "16:9"), ("16x10", "16:10"), ("21x9", "21:9"), ("9x16", tr("wallpaper.portrait"))]
 # The only colors Wallhaven searches by

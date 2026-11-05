@@ -55,7 +55,7 @@ def call(request):
                 data += chunk
         answer = json.loads(data)
     except (OSError, ValueError):
-        return None, tr("vpn.the-vpn-service-isn-t-2")
+        return None, tr("vpn.service-down")
     return answer.get("status"), answer.get("error")
 
 
@@ -386,9 +386,9 @@ def bar():
     def show(s):
         state = s["state"] if s else "off"
         text = "\uf3ed" if state in ("on", "connecting", "dropped") else ""
-        tip = {"on": tr("vpn.on", value=s and s['profile']) + (tr("vpn.chosen-apps-2") if s and s["mode"] == "apps" else ""),
-               "connecting": tr("vpn.connecting-2", value=s and s['profile']),
-               "dropped": tr("vpn.dropped-2", value=s and s['profile'], value2=s and s['error'])}.get(state, "")
+        tip = {"on": tr("vpn.bar-on", profile=s and s['profile']) + (tr("vpn.bar-chosen-apps") if s and s["mode"] == "apps" else ""),
+               "connecting": tr("vpn.bar-connecting", profile=s and s['profile']),
+               "dropped": tr("vpn.bar-dropped", profile=s and s['profile'], error=s and s['error'])}.get(state, "")
         print(json.dumps({"text": text, "class": state, "alt": state, "tooltip": tip}), flush=True)
 
     while True:

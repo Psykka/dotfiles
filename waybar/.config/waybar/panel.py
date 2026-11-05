@@ -962,8 +962,8 @@ class Spotify(Gtk.Box):
         settings = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=GAP)
         settings.pack_start(spotify_head(label(tr("spotify.settings"), ["title"])), False, False, 0)
         settings.pack_start(label(tr("spotify.two-logins-for-two-things"), ["heading"]), False, False, 0)
-        self.player_login = SpotifyLogin("laptop", tr("spotify.1-play-on-this-computer"), self.check_account)
-        self.library_login = SpotifyLogin("user", tr("spotify.2-see-your-library"), self.library_button)
+        self.player_login = SpotifyLogin("laptop", tr("spotify.login-player-title"), self.check_account)
+        self.library_login = SpotifyLogin("user", tr("spotify.login-library-title"), self.library_button)
         settings.pack_start(self.player_login, False, False, 0)
         settings.pack_start(self.library_login, False, False, 0)
         note = label(tr("spotify.spotify-keeps-them-apart-one"), ["muted", "small"], width=TEXT_W + 6)
@@ -1364,7 +1364,7 @@ class Spotify(Gtk.Box):
         uri, context = (item["uri"], None) if item.get("kind") == "context" else (item["uri"], item.get("context"))
 
         def done(_out, err):
-            page.say(spotify_error(err) if err else tr("spotify.playing-2", title=item['title']), error=bool(err))
+            page.say(spotify_error(err) if err else tr("spotify.playing-now", title=item['title']), error=bool(err))
             if err and not self.soloist:
                 self.check_account()
             self.refresh()
@@ -2630,7 +2630,7 @@ class DeviceRow(Gtk.Stack):
         css(self.status, "error", on=bool(error))
         self.main.set_sensitive(not status.endswith("…"))
         self.trash.set_visible(d["paired"])
-        self.question.set_text(tr("bluetooth.forget-2", name=d['name']))
+        self.question.set_text(tr("bluetooth.forget-ask", name=d['name']))
         if not d["paired"] and self.get_visible_child_name() == "forget":
             self.back()
 
@@ -2764,7 +2764,7 @@ class Bluetooth(Gtk.Box):
         with self.switch.handler_block(self.switch_handler):
             self.switch.set_active(on)
         self.switch.set_sensitive(bool(adapter))
-        self.visible_as.set_text(tr("bluetooth.visible-as", value=adapter.get('Alias', '')) if on else
+        self.visible_as.set_text(tr("bluetooth.visible-as", name=adapter.get('Alias', '')) if on else
                                  tr("bluetooth.off") if adapter else tr("bluetooth.no-adapter-found"))
         self.off_text.set_text(tr("bluetooth.bluetooth-is-off") if adapter else tr("bluetooth.no-bluetooth-adapter"))
         self.room.set_visible_child_name("on" if on else "off")
@@ -2926,7 +2926,7 @@ class VpnRow(Gtk.Stack):
         self.status.set_text(status)
         self.status.set_tooltip_text(error)
         css(self.status, "error", on=bool(error))
-        self.question.set_text(tr("vpn.forget-2", name=p['name']))
+        self.question.set_text(tr("vpn.forget-ask", name=p['name']))
 
     def back(self):
         self.set_visible_child_name("main")
@@ -4151,7 +4151,7 @@ class Wallpapers(Gtk.Box):
             try:
                 good, err = wallpaper.check_key(key), None
             except OSError as e:
-                good, err = False, tr("wallpaper.couldn-t-reach-wallhaven", value=getattr(e, 'reason', e))
+                good, err = False, tr("wallpaper.couldn-t-reach-wallhaven", error=getattr(e, 'reason', e))
             if good:
                 wallpaper.set_key(key)
             GLib.idle_add(done, good, err)
@@ -4228,7 +4228,7 @@ class Wallpapers(Gtk.Box):
             return False  # an older search
         self.loading(False)
         if err:
-            self.notice(tr("wallpaper.couldn-t-reach-wallhaven-2", err=err))
+            self.notice(tr("wallpaper.wallhaven-error", err=err))
             self.wh_pager.text.set_text("")
             return False
         self.results = res
@@ -4237,7 +4237,7 @@ class Wallpapers(Gtk.Box):
         if not res["items"]:
             self.slots(self.wh_grid, COLUMNS * 3)
         self.notice("" if res["items"] else tr("wallpaper.no-wallpapers-found"))
-        self.wh_pager.text.set_text(tr("wallpaper.page-of-wallpapers", page=res['page'], value=max(1, res['last']), total=res['total']))
+        self.wh_pager.text.set_text(tr("wallpaper.page-of-wallpapers", page=res['page'], pages=max(1, res['last']), total=res['total']))
         self.wh_pager.prev.set_sensitive(res["page"] > 1)
         self.wh_pager.next.set_sensitive(res["page"] < res["last"])
         return False
@@ -4283,7 +4283,7 @@ class Wallpapers(Gtk.Box):
         shown = files[self.local_page * LOCAL_PAGE:(self.local_page + 1) * LOCAL_PAGE]
         self.fill(self.local_grid, [(str(p), ("local", str(p)), self.in_use(p)) for p in shown])
         self.paint_selection(self.local_grid)
-        self.local_pager.text.set_text(tr("wallpaper.page-of-wallpaper", value=self.local_page + 1, pages=pages, count=len(files), plural='s' if len(files) != 1 else ''))
+        self.local_pager.text.set_text(tr("wallpaper.page-of-wallpaper", page=self.local_page + 1, pages=pages, count=len(files), plural='s' if len(files) != 1 else ''))
         self.local_pager.prev.set_sensitive(self.local_page > 0)
         self.local_pager.next.set_sensitive(self.local_page < pages - 1)
 
@@ -4330,7 +4330,7 @@ class Wallpapers(Gtk.Box):
         self.paint_selection(self.kept_grid)
         self.kept_intro.set_text(tr("wallpaper.wallpapers-with-their-colors-kept") if self.kept else
                                  tr("wallpaper.nothing-kept-yet-save-as"))
-        self.kept_pager.text.set_text(tr("wallpaper.page-of-theme", value=self.kept_page + 1, pages=pages, count=len(self.kept), plural='s' if len(self.kept) != 1 else ''))
+        self.kept_pager.text.set_text(tr("wallpaper.page-of-theme", page=self.kept_page + 1, pages=pages, count=len(self.kept), plural='s' if len(self.kept) != 1 else ''))
         self.kept_pager.prev.set_sensitive(self.kept_page > 0)
         self.kept_pager.next.set_sensitive(self.kept_page < pages - 1)
 
@@ -4522,12 +4522,12 @@ class Wallpapers(Gtk.Box):
     def about(self):
         kind, what = self.picked
         if kind == "wallhaven":
-            return tr("wallpaper.mb", value=what['resolution'].replace('x', '×'), value2=what['size'] / 1e6, category=what['category'])
+            return tr("wallpaper.picture-details", resolution=what['resolution'].replace('x', '×'), megabytes=what['size'] / 1e6, category=what['category'])
         if kind == "saved":
             t = self.kept_theme(what)
             tone = wallpaper.tone_of(t["colors"], self.base)
-            colors = tr("wallpaper.theme-colors-2", tone=tone) if self.mode_of(t["colors"]) == "theme" else ""
-            return tr("wallpaper.text", what=what, file=os.path.basename(t['wallpaper']), colors=colors) + (tr("wallpaper.in-use") if self.kept_in_use(t) else "")
+            colors = tr("wallpaper.with-theme-colors", tone=tone) if self.mode_of(t["colors"]) == "theme" else ""
+            return tr("wallpaper.saved-theme-line", what=what, file=os.path.basename(t['wallpaper']), colors=colors) + (tr("wallpaper.in-use") if self.kept_in_use(t) else "")
         info = GdkPixbuf.Pixbuf.get_file_info(what)
         size = f" · {info[1]}×{info[2]}" if info and info[0] else ""
         return os.path.basename(what) + size + (tr("wallpaper.in-use") if self.in_use(what) else "")
@@ -4587,7 +4587,7 @@ class Wallpapers(Gtk.Box):
             button(tr("wallpaper.save"), self.save, yes=True)
         elif self.asking == "delete":
             kind, what = self.picked
-            info.set_text(tr("wallpaper.forget-2", what=what) if kind == "saved" else tr("wallpaper.delete-2", file=os.path.basename(what)))
+            info.set_text(tr("wallpaper.forget-ask", what=what) if kind == "saved" else tr("wallpaper.delete-ask", file=os.path.basename(what)))
             info.get_style_context().remove_class("muted")
             button(tr("wallpaper.no"), lambda: self.ask(None))
             button(tr("wallpaper.forget") if kind == "saved" else tr("wallpaper.delete"), self.delete, yes=True)
@@ -4630,7 +4630,7 @@ class Wallpapers(Gtk.Box):
                 button(tr("wallpaper.try"), self.apply, yes=True)
             elif self.trying():
                 button(tr("wallpaper.preview"), self.start_preview)
-                button(tr("wallpaper.save-2"), lambda: self.ask("save"), yes=True)
+                button(tr("wallpaper.save-dots"), lambda: self.ask("save"), yes=True)
         elif self.picked:
             info.set_text(self.about())
             kind, what = self.picked
@@ -4638,9 +4638,9 @@ class Wallpapers(Gtk.Box):
                 button(tr("wallpaper.wallhaven"), lambda: spawn("xdg-open", what["url"]))
             elif kind == "saved":
                 if not self.kept_in_use(self.kept_theme(what)):
-                    button(tr("wallpaper.forget-3"), lambda: self.ask("delete"))
+                    button(tr("wallpaper.forget-dots"), lambda: self.ask("delete"))
             elif wallpaper.can_delete(what) and not self.in_use(what):
-                button(tr("wallpaper.delete-3"), lambda: self.ask("delete"))
+                button(tr("wallpaper.delete-dots"), lambda: self.ask("delete"))
             if picked_new:
                 button(tr("wallpaper.try-it"), self.try_picked, yes=True)
         elif tab == "saved":
@@ -4696,20 +4696,20 @@ class Wallpapers(Gtk.Box):
             if not t or not os.path.exists(t["wallpaper"]):
                 self.picked = None
                 self.show_kept()
-                self.fail(tr("wallpaper.is-gone-2", what=what))
+                self.fail(tr("wallpaper.file-gone", what=what))
                 return
             self.use_kept(t)
             return
         self.set_busy(tr("wallpaper.downloading"))
 
         def progress(f):
-            GLib.idle_add(self.set_busy, tr("wallpaper.downloading-2", value=int(f * 100)))
+            GLib.idle_add(self.set_busy, tr("wallpaper.downloading-percent", percent=int(f * 100)))
 
         def work():
             try:
                 path = wallpaper.download(what, progress)
             except OSError as e:
-                GLib.idle_add(self.fail, tr("wallpaper.couldn-t-download-it", value=getattr(e, 'reason', e)))
+                GLib.idle_add(self.fail, tr("wallpaper.couldn-t-download-it", error=getattr(e, 'reason', e)))
                 return
             GLib.idle_add(lambda: self.got_download(str(path)) or False)
         threading.Thread(target=work, daemon=True).start()
@@ -4876,14 +4876,14 @@ class Wallpapers(Gtk.Box):
         name = os.path.basename(self.source)
         name = name if len(name) <= 28 else name[:27] + "…"
         tone = wallpaper.tone_of(dict(self.screen[2]), self.base)
-        colors = tr("wallpaper.wallpaper-colors") if self.mode_of(dict(self.screen[2])) == "wallpaper" else tr("wallpaper.theme-colors-2", tone=tone)
+        colors = tr("wallpaper.wallpaper-colors") if self.mode_of(dict(self.screen[2])) == "wallpaper" else tr("wallpaper.with-theme-colors", tone=tone)
         self.slim_stack = Gtk.Stack(transition_type=Gtk.StackTransitionType.CROSSFADE, transition_duration=150)
         for page, text, buttons in (
                 ("preview", tr("wallpaper.previewing", name=name, colors=colors),
                  ((tr("wallpaper.adjust"), self.end_preview, False),
                   (tr("wallpaper.don-t-keep"), lambda: self.end_preview(self.discard), False),
-                  (tr("wallpaper.keep-2"), lambda: self.show_slim("save"), True))),
-                ("save", tr("wallpaper.keep-3", name=name, colors=colors),
+                  (tr("wallpaper.keep-dots"), lambda: self.show_slim("save"), True))),
+                ("save", tr("wallpaper.keep-ask", name=name, colors=colors),
                  ((tr("wallpaper.no"), lambda: self.slim_stack.set_visible_child_name("preview"), False),
                   (tr("wallpaper.save"), lambda: self.end_preview(self.save), True)))):
             row = Gtk.Box(spacing=8)

@@ -17,6 +17,7 @@ Usage: spotify.py login [--notify] log in (opens the browser); --notify
 import base64
 import concurrent.futures
 import hashlib
+import html
 import http.server
 import json
 import os
@@ -114,7 +115,8 @@ def login():
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.end_headers()
             done = tr("spotify.logged-in") if "code" in got else tr("spotify.not-logged-in")
-            self.wfile.write(tr("spotify.p-style-font-16px-sans", done=done).encode())
+            page = html.escape(tr("spotify.browser-done", done=done))
+            self.wfile.write(f"<p style='font:16px sans-serif'>{page}</p>".encode())
 
         def log_message(self, *_):
             pass
@@ -300,7 +302,7 @@ def playlists():
     """Liked Songs first, then every playlist (followed ones too)."""
     me = api("GET", "me")
     liked_count = api("GET", "me/tracks?limit=1").get("total", 0)
-    return ([row("liked", f"spotify:user:{me['id']}:collection", tr("spotify.liked-songs"), tr("spotify.songs-2", liked_count=liked_count))]
+    return ([row("liked", f"spotify:user:{me['id']}:collection", tr("spotify.liked-songs"), tr("spotify.song-count", count=liked_count))]
             + [playlist_row(p) for p in pages("me/playlists")])
 
 
@@ -315,7 +317,7 @@ def artist_row(a):
 def playlist_row(p):
     total = (p.get("items") or p.get("tracks") or {}).get("total")
     owner = (p.get("owner") or {}).get("display_name") or ""
-    sub = ", ".join(x for x in (owner, tr("spotify.songs-3", total=total) if total is not None else "") if x)
+    sub = ", ".join(x for x in (owner, tr("spotify.song-count", count=total) if total is not None else "") if x)
     return row("playlist", p["uri"], p.get("name"), sub, p.get("images"))
 
 
