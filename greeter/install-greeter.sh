@@ -36,8 +36,14 @@ $SUDO sh -c "
 
     # Unlocks the login keyring with the password typed at login, so apps
     # (VSCode, Firefox, nm-applet) never ask for it. Fedora's greetd already
-    # does this; Arch's and Debian's don't
-    if ! grep -q pam_gnome_keyring.so /etc/pam.d/greetd; then
+    # does this; Arch's and Debian's don't. Fedora ships it in /usr/lib/pam.d
+    # and a file in /etc/pam.d replaces that one whole, so never create
+    # /etc/pam.d/greetd from nothing: with only these lines no module checks
+    # the password and every login is refused.
+    pam=/etc/pam.d/greetd
+    [ -f \$pam ] || pam=/usr/lib/pam.d/greetd
+    if [ -f \$pam ] && ! grep -q pam_gnome_keyring.so \$pam; then
+        [ \$pam = /etc/pam.d/greetd ] || cp \$pam /etc/pam.d/greetd
         printf '%s\n' '-auth       optional    pam_gnome_keyring.so' \
             '-session    optional    pam_gnome_keyring.so auto_start' >> /etc/pam.d/greetd
     fi
