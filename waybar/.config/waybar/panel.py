@@ -3156,13 +3156,9 @@ class Wallpapers(Gtk.Box):
         self.filter_revealer.add(filters)
         page.pack_start(self.filter_revealer, False, False, 0)
 
-        self.wh_grid = Gtk.Grid(row_spacing=6, column_spacing=6)
-        self.wh_scroll = Gtk.ScrolledWindow()
-        self.wh_scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
-        height = THUMB_H * 3 + 4 * 3 + 12 + 4
-        self.wh_scroll.set_min_content_height(height)
-        self.wh_scroll.set_max_content_height(height)
-        self.wh_scroll.add(self.wh_grid)
+        # A page is 3 rows (wallpaper.PER_PAGE): nothing to scroll
+        self.wh_grid = Gtk.Grid(row_spacing=6, column_spacing=6, halign=Gtk.Align.CENTER)
+        self.wh_grid.set_size_request(-1, THUMB_H * 3 + 4 * 3 + 12)
         # Nothing found, or no connection: a small card over the grid
         self.wh_status = label(css=["muted"], xalign=0.5)
         self.wh_status.set_line_wrap(True)
@@ -3172,7 +3168,7 @@ class Wallpapers(Gtk.Box):
         self.wh_notice.set_no_show_all(True)
         self.wh_status.show()
         status = Gtk.Overlay()
-        status.add(self.wh_scroll)
+        status.add(self.wh_grid)
         status.add_overlay(self.wh_notice)
         status.set_overlay_pass_through(self.wh_notice, True)
         page.pack_start(status, False, False, 0)
@@ -3355,7 +3351,6 @@ class Wallpapers(Gtk.Box):
         self.wh_pager.text.set_text(f"Page {res['page']} of {max(1, res['last'])} · {res['total']} wallpapers")
         self.wh_pager.prev.set_sensitive(res["page"] > 1)
         self.wh_pager.next.set_sensitive(res["page"] < res["last"])
-        self.wh_scroll.get_vadjustment().set_value(0)
         return False
 
     def loading(self, on):
@@ -3363,8 +3358,8 @@ class Wallpapers(Gtk.Box):
         fade until the new ones come."""
         pager = self.wh_pager
         (pager.spinner.start if on else pager.spinner.stop)()
-        css(self.wh_scroll, "loading", on=on)
-        self.wh_scroll.set_sensitive(not on)
+        css(self.wh_grid, "loading", on=on)
+        self.wh_grid.set_sensitive(not on)
         pager.prev.set_sensitive(not on and self.results["page"] > 1)
         pager.next.set_sensitive(not on and self.results["page"] < self.results["last"])
         if on:
@@ -3380,7 +3375,7 @@ class Wallpapers(Gtk.Box):
         page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
         page.pack_start(label("In ~/Pictures/Wallpapers, and the ones that come with the dotfiles",
                               ["muted", "small"]), False, False, 0)
-        self.local_grid = Gtk.Grid(row_spacing=6, column_spacing=6)
+        self.local_grid = Gtk.Grid(row_spacing=6, column_spacing=6, halign=Gtk.Align.CENTER)
         self.local_grid.set_size_request(-1, THUMB_H * 3 + 4 * 3 + 12)
         self.local_grid.set_valign(Gtk.Align.START)
         page.pack_start(self.local_grid, True, True, 0)
@@ -3409,7 +3404,7 @@ class Wallpapers(Gtk.Box):
         page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
         self.kept_intro = label(css=["muted", "small"], ellipsize=True)
         page.pack_start(self.kept_intro, False, False, 0)
-        self.kept_grid = Gtk.Grid(row_spacing=6, column_spacing=6)
+        self.kept_grid = Gtk.Grid(row_spacing=6, column_spacing=6, halign=Gtk.Align.CENTER)
         # As tall as the Downloaded grid, so the tabs line up
         self.kept_grid.set_size_request(-1, THUMB_H * 3 + 4 * 3 + 12)
         self.kept_grid.set_valign(Gtk.Align.START)

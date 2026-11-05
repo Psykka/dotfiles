@@ -165,16 +165,21 @@ def set_key(key):
     _key = key
 
 
+# Wallpapers per page in the panel (3 rows of 4, nothing to scroll); a page
+# of Wallhaven (24) is two of them, read once
+PER_PAGE = 12
+_last_answer = {}  # {"key": (params without the page, page), "data": ...}
+
+
 def search(f, page=1, seed=None):
-    """One page of results: {"items", "page", "last", "total", "seed"}.
-    Raises OSError when Wallhaven can't be reached."""
+    """One page of PER_PAGE results: {"items", "page", "last", "total",
+    "seed"}. Raises OSError when Wallhaven can't be reached."""
     def bits(*names):
         out = "".join("1" if f[n] else "0" for n in names)
         return out if "1" in out else "1" + "0" * (len(names) - 1)
 
     params = {"q": f["q"], "categories": bits("general", "anime", "people"),
-              "purity": bits("sfw", "sketchy", "nsfw"), "sorting": f["sorting"],
-              "order": "desc", "page": page}
+              "purity": bits("sfw", "sketchy", "nsfw"), "sorting": f["sorting"], "order": "desc"}
     if f["sorting"] == "toplist":
         params["topRange"] = f["range"]
     if f["atleast"]:
@@ -187,17 +192,27 @@ def search(f, page=1, seed=None):
         params["seed"] = seed
     if api_key():
         params["apikey"] = api_key()
-    try:
-        with fetch(API + "?" + urllib.parse.urlencode(params)) as r:
-            data = json.load(r)
-    except ValueError as e:
-        raise OSError(f"bad answer from Wallhaven ({e})")
+    remote = (page - 1) * PER_PAGE // 24 + 1
+    key = (sorted(params.items()), remote)
+    if _last_answer.get("key") == key:
+        data = _last_answer["data"]
+    else:
+        try:
+            with fetch(API + "?" + urllib.parse.urlencode({**params, "page": remote})) as r:
+                data = json.load(r)
+        except ValueError as e:
+            raise OSError(f"bad answer from Wallhaven ({e})")
+        _last_answer.update(key=key, data=data)
     meta = data.get("meta", {})
+    per = meta.get("per_page")
+    per = int(per) if str(per).isdigit() else 24
+    start = (page - 1) * PER_PAGE - (remote - 1) * per
     items = [{"id": w["id"], "url": w["url"], "path": w["path"], "thumb": w["thumbs"]["small"],
               "resolution": w["resolution"], "size": w["file_size"], "category": w["category"]}
-             for w in data.get("data", [])]
-    return {"items": items, "page": meta.get("current_page", page), "last": meta.get("last_page", 1),
-            "total": meta.get("total", len(items)), "seed": meta.get("seed")}
+             for w in data.get("data", [])[start:start + PER_PAGE]]
+    total = meta.get("total", len(items))
+    return {"items": items, "page": page, "last": max(1, -(-total // PER_PAGE)),
+            "total": total, "seed": meta.get("seed")}
 
 
 def file_of(item):
