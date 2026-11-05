@@ -33,6 +33,14 @@ $SUDO sh -c "
     install -m 755 '$here/login-session' /usr/local/bin/
     # tuigreet remembers the last user and sessions here
     install -d -o greetd -g greetd /var/cache/tuigreet
+    # With SELinux (Fedora) the greeter runs as xdm_t, which may not write
+    # the plain var_t this folder gets, so nothing was ever remembered;
+    # label it like the other display managers' state (/var/lib/greetd)
+    if command -v semanage >/dev/null && selinuxenabled 2>/dev/null; then
+        semanage fcontext -a -t xdm_var_lib_t '/var/cache/tuigreet(/.*)?' >/dev/null 2>&1 ||
+            semanage fcontext -m -t xdm_var_lib_t '/var/cache/tuigreet(/.*)?'
+        restorecon -R /var/cache/tuigreet
+    fi
 
     # Unlocks the login keyring with the password typed at login, so apps
     # (VSCode, Firefox, nm-applet) never ask for it. Fedora's greetd already
