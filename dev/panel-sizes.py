@@ -322,6 +322,11 @@ def stop_fake_player():
         fake.pop().terminate()
 
 
+class Problems(list):
+    """What a checking step found wrong (empty: all good). Its own type, so
+    a step that happens to return a list (a comprehension) isn't one."""
+
+
 def rows_respond(client, key):
     """Problems with a Spotify list's rows: each showing something must be
     clickable and change its background under the mouse (a row without
@@ -330,7 +335,7 @@ def rows_respond(client, key):
     page = client.lists[key]
     shown = [r for r in page.rows if r.item]
     if not shown:
-        return [f"{key}: no rows to try"]
+        return Problems([f"{key}: no rows to try"])
     bad = []
     for i, r in enumerate(shown):
         # The style as it would be under the mouse (the context's own state,
@@ -345,7 +350,7 @@ def rows_respond(client, key):
             bad.append(f"{key}: row {i + 1} ({r.item.get('title')!r}) can't be clicked")
         elif normal.to_string() == hover.to_string():
             bad.append(f"{key}: row {i + 1} ({r.item.get('title')!r}) has no hover")
-    return bad
+    return Problems(bad)
 
 
 def fake_spotify():
@@ -426,8 +431,8 @@ def run(mode, shots):
     def do(name, action, allowed):
         state["step"], state["allowed"] = name, allowed
         out = action(found["panel"].content)
-        # A check: a list of what's wrong (empty: all good)
-        if isinstance(out, list):
+        # A check: what's wrong (empty: all good)
+        if isinstance(out, Problems):
             problems.extend(f"{name}: {p}" for p in out)
         if shots:
             GLib.timeout_add(400, lambda: subprocess.run(
