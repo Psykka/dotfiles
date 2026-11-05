@@ -33,9 +33,12 @@ from the start.
 
 - **Media**: click the song for a compact player with the cover, seek and
   volume (scroll on the speaker button, or click it for the volume line).
-  The song stays on the bar, dimmed, while paused. With Spotify set up,
-  under the player: your playlists, the queue, search (`Super + M`), the
-  devices, and an Account tab for its two logins.
+  The song stays on the bar, dimmed, while paused.
+- **Spotify** (its own island, when Soloist is set up; `Super + M` opens it
+  on the search): a mini client with your library (playlists, albums,
+  artists, each opening its songs), search with filters, the queue and
+  what played lately, the devices, and the player with shuffle, repeat and
+  Liked Songs. Settings has its two logins.
 - **Calendar**: click the clock. Today in the middle of a fixed six-week
   month, and the last 30 notifications beside it.
 - **Updates**: the cube shows pending packages (and a new Fedora release),
@@ -95,7 +98,8 @@ the same colors.
 | `Super + /` | All keybindings |
 | `Super + Esc` | System menu |
 | `Super + V` | Clipboard history |
-| `Super + M` | Spotify search (the media popup) |
+| `Super + M` | Spotify search |
+| `Super + P`, `Super + .`, `Super + ,` (or the media keys) | Play/pause, next, previous song |
 | `Print`, `Shift + Print` / `Super + Shift + S` | Screenshot of the screen, of an area |
 | `Super + 1`…`6`, `Super + Shift + 1`…`6` | Go to workspace, move the window there |
 | `Super + scroll` | Previous / next workspace |

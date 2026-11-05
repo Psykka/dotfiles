@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Bar popups: mini media player, calendar + notifications, general menu,
-sound, displays, bluetooth, vpn, wallpaper.
+"""Bar popups: mini media player, Spotify, calendar + notifications, general
+menu, sound, displays, bluetooth, vpn, wallpaper.
 
-Usage: panel.py media|calendar|menu|network|updates|sound|displays|bluetooth|vpn|wallpaper
-       panel.py media search     the media popup on Spotify's search
+Usage: panel.py media|spotify|calendar|menu|network|updates|sound|displays|bluetooth|vpn|wallpaper
+       panel.py spotify [search]  the Spotify mini client (on its search)
 Running it again with the same mode closes it; another mode replaces it.
 """
 import atexit
@@ -61,6 +61,8 @@ ICON = {
     "vpn": "\uf3ed", "trash": "\uf1f8", "camera": "\uf030", "move": "\uf0ec", "image": "\uf03e", "terminal": "\uf120",
     "moon": "\uf186", "sun": "\uf185",
     "heart": "\uf004", "list": "\uf03a", "disc": "\uf51f", "user": "\uf007", "tv": "\uf26c",
+    "book": "\uf02d", "search": "\uf002", "gear": "\uf013", "shuffle": "\uf074", "repeat": "\uf363",
+    "queue": "\uf0cb",
 }
 
 CSS = b"""
@@ -193,7 +195,13 @@ button.tab.on { background: @bg2; color: @hi; }
 button.item { padding: 0 4px; border-radius: 4px; }
 button.item.on .item-title { color: @accent; }
 button.item.static:hover { background: transparent; color: @fg; }
-.card { background: @bg2; border-radius: 4px; padding: 10px 12px; }
+.card { background: @bg2; border-radius: 4px; padding: 0 12px 0 4px; }
+/* The Spotify client: its column of pages, the line beside it */
+button.nav { min-width: 36px; min-height: 36px; padding: 0; color: @mute; }
+button.nav.on { background: @bg2; color: @hi; }
+separator.rule { background: @line; min-width: 1px; min-height: 1px; }
+button.ctl.on label { color: @accent; }
+.icon.regular { font-weight: 400; }
 .tuning:disabled { opacity: 0.5; }
 entry.search { background: @bg2; color: @fg; border: none; border-radius: 4px; box-shadow: none; padding: 4px 8px; }
 entry.search image { color: @mute; }
@@ -555,16 +563,6 @@ class Media(Gtk.Box):
         self.lines.add_named(volume, "volume")
         self.pack_start(self.lines, False, False, 0)
 
-        # Spotify set up on this machine (Soloist and an app of yours): its
-        # lists under the player, from the start (the popup's size is fixed
-        # when it opens, whatever player is on)
-        self.browser = self.track = None
-        if spotify.available():
-            self.browser = SpotifyBrowser()
-            self.pack_start(self.browser, False, False, 0)
-            if sys.argv[2:3] == ["search"]:
-                self.browser.show_tab("search")
-
         self.refresh()
         GLib.timeout_add_seconds(1, self.refresh)
 
@@ -574,10 +572,6 @@ class Media(Gtk.Box):
         status, title, artist, art, length, pos, vol, player = (out.split("\x1f") + [""] * 8)[:8]
         for b in self.buttons:
             b.set_sensitive(bool(out))
-        if self.browser and (title, artist) != self.track:
-            if self.track is not None:
-                self.browser.track_changed()
-            self.track = (title, artist)
         self.title.set_text(title or ("Unknown" if out else "Nothing playing"))
         self.artist.set_text(artist)
         self.player.set_text(player.capitalize())
@@ -648,7 +642,7 @@ class Media(Gtk.Box):
         self.cover.show(url if url and url.startswith(("file://", "http")) else None)
 
 
-# ------------------------------------------------- Spotify, in the media popup
+# ------------------------------------------------- Spotify (its own popup)
 
 def in_thread(work, done):
     """work() off the main loop; done(result, error) back on it."""
@@ -668,34 +662,43 @@ def spotify_error(err):
 
 
 SPOTIFY_ICONS = {"liked": "heart", "playlist": "list", "album": "disc", "artist": "user", "track": "music",
-                 "computer": "laptop", "smartphone": "phone", "speaker": "volume", "tv": "tv", "login": "user"}
+                 "episode": "music", "computer": "laptop", "smartphone": "phone", "speaker": "volume", "tv": "tv",
+                 "login": "user"}
+
+# The Spotify client's grid: one gap, one row, one picture, one header.
+# Every page is a header and a list of the same rows over the player.
+GAP = 12
+ROW_H = 40
+PIC = 32
+HEAD_H = 30
+TEXT_W = 38  # a row's title, in characters: the client's width comes from it
 
 
 class SpotifyRow(Gtk.Button):
-    """A line of a Spotify list: an icon, the name and a line under it.
-    Always one height; without an item it keeps its room, unseen."""
-
-    HEIGHT = 40
-    PICTURE = 32
+    """A line of a Spotify list: the picture, the name and a line under
+    it, a song's length on the right. Always one height; without an item it
+    keeps its room, unseen."""
 
     def __init__(self, on_pick):
         super().__init__()
         css(self, "item")
-        self.set_size_request(-1, self.HEIGHT)
-        box = Gtk.Box(spacing=10)
-        self.icon = Cover(self.PICTURE)
+        self.set_size_request(-1, ROW_H)
+        box = Gtk.Box(spacing=GAP)
+        self.icon = Cover(PIC)
         self.icon.set_valign(Gtk.Align.CENTER)
         names = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, valign=Gtk.Align.CENTER)
-        self.title = label(css=["item-title"], ellipsize=True, width=31)
-        self.sub = label(css=["muted", "small"], ellipsize=True, width=37)
+        self.title = label(css=["item-title"], ellipsize=True, width=TEXT_W)
+        self.sub = label(css=["muted", "small"], ellipsize=True, width=TEXT_W + 6)
         names.pack_start(self.title, False, False, 0)
         names.pack_start(self.sub, False, False, 0)
         # The names, or their skeleton while the list loads: one room
         self.text = Gtk.Stack(homogeneous=True)
         self.text.add_named(names, "names")
-        self.text.add_named(TextPulse(self.HEIGHT), "pulse")
+        self.text.add_named(TextPulse(ROW_H), "pulse")
+        self.side = label(css=["muted", "small"], xalign=1.0, width=5)
         box.pack_start(self.icon, False, False, 0)
         box.pack_start(self.text, True, True, 0)
+        box.pack_start(self.side, False, False, 0)
         self.add(box)
         self.item = None
         self.connect("clicked", lambda _: self.item and on_pick(self.item))
@@ -706,44 +709,45 @@ class SpotifyRow(Gtk.Button):
         self.set_opacity(1)
         self.set_sensitive(False)
         self.text.set_visible_child_name("pulse")
+        self.side.set_text("")
         self.icon.show(None)
         self.icon.wait(True)
 
     def show(self, item, on=False, pickable=True):
-        self.item = item
+        item = item or {}
+        self.item = item or None
         self.text.set_visible_child_name("names")
         self.set_opacity(1 if item else 0)
         self.set_sensitive(bool(item))
         css(self, "static", on=not pickable)
         css(self, "on", on=on)
-        self.icon.show((item or {}).get("image"), SPOTIFY_ICONS.get((item or {}).get("kind"), "music"))
-        self.title.set_text((item or {}).get("title", ""))
-        self.sub.set_text((item or {}).get("sub", ""))
+        self.icon.show(item.get("image"), SPOTIFY_ICONS.get(item.get("kind"), "music"))
+        self.title.set_text(item.get("title", ""))
+        self.sub.set_text(item.get("sub", ""))
+        self.side.set_text(fmt_time(item["length"] / 1000) if item.get("length") else "")
 
 
 class SpotifyList(Gtk.Box):
-    """A page of rows and a line under them (what's going on, and the
-    pages: no scrolling, so the room never changes). `top` takes the first
-    row's place (the search box)."""
+    """A page of rows and a line under them: what's going on, and the
+    pages (no scrolling, so the room never changes)."""
 
-    ROWS = 6
+    ROWS = 7
 
-    def __init__(self, on_pick, top=None, pickable=True):
-        super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+    def __init__(self, on_pick, pickable=True):
+        super().__init__(orientation=Gtk.Orientation.VERTICAL)
         self.pickable = pickable
-        if top:
-            top.set_size_request(-1, SpotifyRow.HEIGHT)
-            self.pack_start(top, False, False, 0)
-        self.rows = [SpotifyRow(on_pick) for _ in range(self.ROWS - (1 if top else 0))]
+        self.rows = [SpotifyRow(on_pick) for _ in range(self.ROWS)]
         for r in self.rows:
             self.pack_start(r, False, False, 0)
-        foot = Gtk.Box(spacing=2, margin_top=4)
-        self.note = label(css=["muted", "small"], ellipsize=True, width=30)
+        foot = Gtk.Box(spacing=2)
+        foot.set_size_request(-1, HEAD_H)
+        self.note = label(css=["muted", "small"], ellipsize=True, width=TEXT_W)
         foot.pack_start(self.note, True, True, 0)
         self.back = icon_button("left", css=["small"], on_click=lambda: self.turn(-1))
         self.count = label(css=["muted", "small"], xalign=0.5, width=5)
         self.ahead = icon_button("right", css=["small"], on_click=lambda: self.turn(1))
         for w in (self.back, self.count, self.ahead):
+            w.set_valign(Gtk.Align.CENTER)
             foot.pack_start(w, False, False, 0)
         self.pack_start(foot, False, False, 0)
         self.items, self.page, self.marked = [], 0, None
@@ -773,7 +777,7 @@ class SpotifyList(Gtk.Box):
             self.show_page()
 
     def mark(self, test):
-        """Rows to show in the accent color (the device in use...)."""
+        """Rows in the accent color (the song playing, the device in use)."""
         self.marked = test
         self.show_page()
 
@@ -798,29 +802,46 @@ class SpotifyList(Gtk.Box):
         self.show_page()
 
 
-class SpotifyCard(Gtk.Box):
-    """One of the two logins: what it's for, whether it's done, and its
-    button. The texts change, the card doesn't."""
+class Chips(Gtk.Box):
+    """The filters of a page (Playlists, Albums...): one is on."""
+
+    def __init__(self, options, on_pick):
+        super().__init__(spacing=4, valign=Gtk.Align.CENTER)
+        self.on_pick, self.key, self.buttons = on_pick, None, {}
+        for key, text in options:
+            b = css(Gtk.Button(label=text), "filter")
+            b.connect("clicked", lambda _, k=key: self.pick(k))
+            self.pack_start(b, False, False, 0)
+            self.buttons[key] = b
+        self.pick(options[0][0], quiet=True)
+
+    def pick(self, key, quiet=False):
+        self.key = key
+        for k, b in self.buttons.items():
+            css(b, "yes", on=k == key)
+        if not quiet:
+            self.on_pick(key)
+
+
+class SpotifyLogin(Gtk.Box):
+    """One of the two logins, on one line: what it's for, whether it's
+    done (and how), and its button. The texts change, the line doesn't."""
 
     def __init__(self, icon, title, on_click):
-        super().__init__(spacing=12)
+        super().__init__(spacing=GAP)
         css(self, "card")
-        self.pack_start(label(ICON[icon], ["icon", "muted"], xalign=0.5, width=2), False, False, 0)
-        names = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
-        names.pack_start(label(title, ["title"], ellipsize=True, width=26), False, False, 0)
-        self.status = label(css=["small"], ellipsize=True, width=34)
-        self.detail = label(css=["muted", "small"], width=34)
-        self.detail.set_line_wrap(True)
-        self.detail.set_lines(3)
-        self.detail.set_ellipsize(Pango.EllipsizeMode.END)
-        # Three lines of room, whatever it says
-        self.detail.set_size_request(-1, 50)
-        self.detail.set_yalign(0)
+        self.set_size_request(-1, 2 * ROW_H)
+        mark = label(ICON[icon], ["icon", "muted"], xalign=0.5, width=2)
+        mark.set_size_request(PIC, -1)
+        self.pack_start(mark, False, False, 0)
+        names = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2, valign=Gtk.Align.CENTER)
+        names.pack_start(label(title, ["item-title"], ellipsize=True, width=TEXT_W - 12), False, False, 0)
+        self.status = label(css=["small"], ellipsize=True, width=TEXT_W)
+        self.detail = label(css=["muted", "small"], ellipsize=True, width=TEXT_W)
         names.pack_start(self.status, False, False, 0)
         names.pack_start(self.detail, False, False, 0)
         self.pack_start(names, True, True, 0)
-        self.button = Gtk.Button(valign=Gtk.Align.CENTER)
-        css(self.button, "small")
+        self.button = css(Gtk.Button(valign=Gtk.Align.CENTER), "filter")
         self.button.add(label(xalign=0.5, width=11))
         self.button.connect("clicked", lambda _: on_click())
         self.pack_end(self.button, False, False, 0)
@@ -829,117 +850,273 @@ class SpotifyCard(Gtk.Box):
         self.status.set_text(status)
         css(self.status, "muted", on=not ok)
         self.detail.set_text(detail)
+        self.detail.set_tooltip_text(detail)
         self.button.get_child().set_text(button or "")
         self.button.set_opacity(1 if button else 0)
         self.button.set_sensitive(bool(button))
 
 
-class SpotifyBrowser(Gtk.Box):
-    """Under the player: your playlists, the queue, search, the devices and
-    the two logins, in tabs of one size. What's played plays here, on
-    Soloist; the lists come from the Web API (spotify.py)."""
+def spotify_head(left, right=None):
+    """A page's header: its name (or the search box) left, filters right."""
+    box = Gtk.Box(spacing=GAP)
+    box.set_size_request(-1, HEAD_H)
+    left.set_valign(Gtk.Align.CENTER)
+    box.pack_start(left, True, True, 0)
+    if right:
+        box.pack_end(right, False, False, 0)
+    return box
 
-    TABS = (("playlists", "Playlists"), ("queue", "Queue"), ("search", "Search"),
-            ("devices", "Devices"), ("account", "Account"))
+
+# Soloist's player (dev/panel-sizes.py points it at its pretend one)
+SPOTIFY_PLAYERCTL = ["playerctl", "-p", "soloist"]
+
+
+class Spotify(Gtk.Box):
+    """The Spotify mini client (the bar's Spotify button, Super+M): your
+    library, search, the queue, the devices and the settings (its two
+    logins) beside a column of icons, the player under them. One grid for
+    all of it (GAP, ROW_H, HEAD_H): every page is a header and the same
+    rows, so a page, a load or a message moves nothing.
+
+    It plays on Soloist; the lists come from the Web API (spotify.py)."""
+
+    NAV = (("library", "book", "Library"), ("search", "search", "Search"),
+           ("queue", "queue", "Queue"), ("devices", "laptop", "Devices"))
     SEARCH_MS = 450  # after the last key, before asking
-    LOGIN_CHECK_MS = 1000
+    CHECK_MS = 1000  # how often a login in the browser is looked at
+    FIELDS = ["status", "xesam:title", "xesam:artist", "mpris:artUrl", "mpris:length", "position",
+              "shuffle", "loop", "xesam:url"]
 
     def __init__(self):
-        super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=8)
-        self.web = None  # logged in to the library (None: not known yet)
-        self.soloist = None
+        super().__init__(spacing=GAP)
+        self.web = self.soloist = None  # the two logins (None: not known yet)
         self.searched = 0  # the last search asked: older answers are dropped
         self.search_timer = None
-        self.stale = {"playlists": True, "queue": True, "devices": True}
+        self.asked = {}  # each list's last load: older answers are dropped
+        self.opened = None  # the playlist/album/artist on the detail page
+        self.back_to = "library"
+        self.song = None  # the song playing (its uri)
+        self.liked = None
+        self.state = {}
 
-        tabs = Gtk.Box(spacing=2)
-        self.tabs, self.dots = {}, {}
-        for key, text in self.TABS:
-            b = css(Gtk.Button(), "tab")
-            inner = Gtk.Box(spacing=3)
-            inner.pack_start(label(text), False, False, 0)
-            self.dots[key] = label("●", ["tab-dot"])
-            self.dots[key].set_opacity(0)
-            inner.pack_start(self.dots[key], False, False, 0)
-            b.add(inner)
-            b.connect("clicked", lambda _, k=key: self.show_tab(k))
-            tabs.pack_start(b, True, True, 0)
-            self.tabs[key] = b
-        self.pack_start(tabs, False, False, 0)
+        nav = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        self.nav = {}
+        for key, icon, tip in self.NAV:
+            b = icon_button(icon, css=["nav"], on_click=lambda k=key: self.show_page(k))
+            b.set_tooltip_text(tip)
+            nav.pack_start(b, False, False, 0)
+            self.nav[key] = b
+        # Settings, with a dot while one of the logins is missing
+        b = icon_button("gear", css=["nav"], on_click=lambda: self.show_page("settings"))
+        b.set_tooltip_text("Settings")
+        self.nav["settings"] = b
+        dot = Gtk.Overlay()
+        dot.add(b)
+        self.dot = label("●", ["tab-dot"])
+        self.dot.set_halign(Gtk.Align.END)
+        self.dot.set_valign(Gtk.Align.START)
+        self.dot.set_margin_end(6)
+        self.dot.set_margin_top(4)
+        self.dot.set_opacity(0)
+        dot.add_overlay(self.dot)
+        dot.set_overlay_pass_through(self.dot, True)
+        nav.pack_end(dot, False, False, 0)
+        self.pack_start(nav, False, False, 0)
+        self.pack_start(css(Gtk.Separator(orientation=Gtk.Orientation.VERTICAL), "rule"), False, False, 0)
 
+        main = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=GAP)
         self.pages = Gtk.Stack(homogeneous=True, transition_type=Gtk.StackTransitionType.CROSSFADE,
                                transition_duration=120)
-        self.playlists = SpotifyList(self.play)
-        self.queue = SpotifyList(self.play, pickable=False)
-        self.entry = Gtk.SearchEntry(placeholder_text="Songs, artists, albums, playlists")
-        css(self.entry, "search")
-        self.entry.set_valign(Gtk.Align.CENTER)
+        self.lists = {}
+
+        self.library_kind = Chips((("playlists", "Playlists"), ("albums", "Albums"), ("artists", "Artists")),
+                                  lambda _: self.load("library"))
+        self.add_page("library", label("Library", ["title"]), self.library_kind)
+
+        self.entry = Gtk.SearchEntry(placeholder_text="What do you want to hear?")
+        # As tall as the filters beside it
+        css(self.entry, "search", "in-bar")
         self.entry.connect("search-changed", lambda _: self.search_soon())
         self.entry.connect("activate", lambda _: self.search_now())
-        top = Gtk.Box()
-        top.pack_start(self.entry, True, True, 0)
-        self.results = SpotifyList(self.play, top=top)
-        self.devices = SpotifyList(self.transfer)
-        self.devices.mark(lambda d: d.get("active"))
-        for key, page in (("playlists", self.playlists), ("queue", self.queue), ("search", self.results),
-                          ("devices", self.devices), ("account", self.account_page())):
-            self.pages.add_named(page, key)
-        self.pages.connect("map", lambda _: self.check_account())
-        # Shown now: a Stack won't switch to a page that isn't (opening
-        # straight on Search)
+        self.search_kind = Chips((("all", "All"), ("track", "Songs"), ("artist", "Artists"),
+                                  ("album", "Albums"), ("playlist", "Playlists")), lambda _: self.search_now())
+        self.add_page("search", self.entry, self.search_kind)
+
+        back = Gtk.Box(spacing=8)
+        back_button = icon_button("left", css=["small"], on_click=lambda: self.show_page(self.back_to))
+        back.pack_start(back_button, False, False, 0)
+        self.opened_title = label(css=["title"], ellipsize=True, width=TEXT_W - 14)
+        back.pack_start(self.opened_title, True, True, 0)
+        self.play_all = css(Gtk.Button(label="Play"), "filter", "yes")
+        self.play_all.connect("clicked", lambda _: self.opened and self.play(dict(self.opened, kind="context")))
+        self.add_page("detail", back, self.play_all)
+
+        self.queue_kind = Chips((("next", "Up next"), ("recent", "Recently played")), lambda _: self.load("queue"))
+        self.add_page("queue", label("Queue", ["title"]), self.queue_kind)
+        self.add_page("devices", label("Devices", ["title"]), None, pick=self.transfer)
+        self.lists["devices"].mark(lambda d: d.get("active"))
+
+        settings = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=GAP)
+        settings.pack_start(spotify_head(label("Settings", ["title"])), False, False, 0)
+        settings.pack_start(label("TWO LOGINS, FOR TWO THINGS", ["heading"]), False, False, 0)
+        self.player_login = SpotifyLogin("laptop", "1 · Play on this computer", self.check_account)
+        self.library_login = SpotifyLogin("user", "2 · See your library", self.library_button)
+        settings.pack_start(self.player_login, False, False, 0)
+        settings.pack_start(self.library_login, False, False, 0)
+        note = label("Spotify keeps them apart: one makes this computer a speaker (Soloist), "
+                     "the other lets this window read your library.", ["muted", "small"], width=TEXT_W + 6)
+        note.set_line_wrap(True)
+        settings.pack_start(note, False, False, 0)
+        self.version = label(css=["muted", "small"], ellipsize=True, width=TEXT_W + 6)
+        settings.pack_end(self.version, False, False, 0)
+        self.pages.add_named(settings, "settings")
+
+        main.pack_start(self.pages, True, True, 0)
+        main.pack_start(css(Gtk.Separator(), "rule"), False, False, 0)
+        main.pack_start(self.player(), False, False, 0)
+        self.pack_start(main, True, True, 0)
+
+        # Shown now: a Stack won't switch to a page that isn't
         self.pages.show_all()
-        self.pack_start(self.pages, False, False, 0)
-        self.show_tab("playlists")
+        self.pages.connect("map", lambda _: self.check_account())
+        self.show_page("search" if sys.argv[2:3] == ["search"] else "library")
+        self.refresh()
+        GLib.timeout_add_seconds(1, self.refresh)
+
+    def add_page(self, key, left, right, pick=None):
+        page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=GAP)
+        page.pack_start(spotify_head(left, right), False, False, 0)
+        self.lists[key] = SpotifyList(pick or self.pick)
+        self.lists[key].mark(lambda item: item.get("uri") == self.song)
+        page.pack_start(self.lists[key], False, False, 0)
+        self.pages.add_named(page, key)
+
+    # ---------------------------------------------------------- the player
+
+    def player(self):
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        top = Gtk.Box(spacing=GAP)
+        self.cover = Cover(PIC + 8)
+        top.pack_start(self.cover, False, False, 0)
+        names = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, valign=Gtk.Align.CENTER)
+        self.now_title = label(css=["item-title"], ellipsize=True, width=20)
+        self.now_artist = label(css=["muted", "small"], ellipsize=True, width=24)
+        names.pack_start(self.now_title, False, False, 0)
+        names.pack_start(self.now_artist, False, False, 0)
+        top.pack_start(names, True, True, 0)
+        controls = Gtk.Box(spacing=2, valign=Gtk.Align.CENTER)
+        self.shuffle = icon_button("shuffle", css=["ctl"], on_click=self.toggle_shuffle)
+        self.prev = icon_button("prev", css=["ctl"], on_click=lambda: run(*SPOTIFY_PLAYERCTL, "previous"))
+        self.playing = icon_button("play", css=["ctl", "main"], on_click=lambda: run(*SPOTIFY_PLAYERCTL, "play-pause"))
+        self.next = icon_button("next", css=["ctl"], on_click=lambda: run(*SPOTIFY_PLAYERCTL, "next"))
+        self.repeat = icon_button("repeat", css=["ctl"], on_click=self.cycle_repeat)
+        self.heart = icon_button("heart", css=["ctl"], on_click=self.toggle_liked)
+        for w in (self.shuffle, self.prev, self.playing, self.next, self.repeat, self.heart):
+            controls.pack_start(w, False, False, 0)
+        top.pack_end(controls, False, False, 0)
+        box.pack_start(top, False, False, 0)
+        line = Gtk.Box(spacing=10)
+        self.pos = label(css=["muted", "small"], width=5, ellipsize=True)
+        self.seek = css(hslider(0, 1, lambda v: run(*SPOTIFY_PLAYERCTL, "position", str(int(v)))), "thin")
+        self.length = label(css=["muted", "small"], xalign=1.0, width=5, ellipsize=True)
+        line.pack_start(self.pos, False, False, 0)
+        line.pack_start(self.seek, True, True, 0)
+        line.pack_start(self.length, False, False, 0)
+        box.pack_start(line, False, False, 0)
+        return box
+
+    def refresh(self):
+        fmt = "\x1f".join("{{%s}}" % f for f in self.FIELDS)
+        out = run(*SPOTIFY_PLAYERCTL, "metadata", "--format", fmt)
+        status, title, artist, art, length, pos, shuffle, loop, uri = (out.split("\x1f") + [""] * 9)[:9]
+        self.state = {"shuffle": shuffle == "true", "loop": loop or "None"}
+        for b in (self.shuffle, self.prev, self.playing, self.next, self.repeat):
+            b.set_sensitive(bool(out))
+        self.now_title.set_text(title or ("Unknown" if out else "Nothing playing"))
+        self.now_artist.set_text(artist or ("" if out else "Pick something to play"))
+        self.cover.show(art if art.startswith(("http", "file://")) else None)
+        length_s = int(length or 0) / 1e6
+        pos_s = min(int(pos or 0) / 1e6, length_s) if length_s else 0
+        self.seek.set_sensitive(bool(length_s))
+        self.seek.set_range(0, max(length_s, 1))
+        self.seek.set_value(pos_s)
+        self.pos.set_text(fmt_time(pos_s) if out else "")
+        self.length.set_text(fmt_time(length_s) if length_s else "")
+        self.playing.get_child().get_children()[0].set_text(ICON["pause" if status == "Playing" else "play"])
+        css(self.shuffle, "on", on=self.state["shuffle"])
+        css(self.repeat, "on", on=self.state["loop"] != "None")
+        self.repeat.set_tooltip_text({"None": "Repeat: off", "Playlist": "Repeat: all", "Track": "Repeat: this song"}
+                                     .get(self.state["loop"]))
+        if uri != self.song:
+            self.song_changed(uri or None)
+        return True
+
+    def song_changed(self, uri):
+        self.song = uri
+        for page in self.lists.values():
+            page.show_page()
+        self.show_liked(None)
+        if uri and uri.startswith("spotify:track:") and self.web:
+            in_thread(lambda: spotify.liked(uri), lambda on, err: self.song == uri and not err and self.show_liked(on))
+        if self.pages.get_visible_child_name() == "queue":
+            self.load("queue")
+
+    def show_liked(self, on):
+        """None: not known (no song, or not asked yet)."""
+        self.liked = on
+        self.heart.set_sensitive(on is not None)
+        css(self.heart, "on", on=bool(on))
+        css(self.heart.get_child().get_children()[0], "regular", on=not on)
+        self.heart.set_tooltip_text("Remove from Liked Songs" if on else "Save to Liked Songs")
+
+    def toggle_liked(self):
+        uri, on = self.song, not self.liked
+        self.show_liked(on)
+        in_thread(lambda: spotify.set_liked(uri, on), lambda _o, err: err and self.show_liked(not on))
+
+    def toggle_shuffle(self):
+        run(*SPOTIFY_PLAYERCTL, "shuffle", "Off" if self.state.get("shuffle") else "On")
+        self.refresh()
+
+    def cycle_repeat(self):
+        after = {"None": "Playlist", "Playlist": "Track"}.get(self.state.get("loop"), "None")
+        run(*SPOTIFY_PLAYERCTL, "loop", after)
+        self.refresh()
 
     # ---------------------------------------------------------- the logins
 
-    def account_page(self):
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
-        box.pack_start(label("TWO LOGINS, FOR TWO THINGS", ["heading"]), False, False, 0)
-        self.player_card = SpotifyCard("laptop", "1 · Plays on this computer", self.check_account)
-        self.library_card = SpotifyCard("user", "2 · Sees your library", self.library_button)
-        box.pack_start(self.player_card, False, False, 0)
-        box.pack_start(self.library_card, False, False, 0)
-        note = label("Spotify keeps them apart: one makes this computer a speaker, "
-                     "the other lets the bar read your library.",
-                     ["muted", "small"], width=44)
-        note.set_line_wrap(True)
-        box.pack_start(note, False, False, 0)
-        return box
-
     def check_account(self):
-        in_thread(lambda: (spotify.logged_in(), spotify.soloist_up(), spotify.login_pending()),
+        in_thread(lambda: (spotify.logged_in(), spotify.soloist_up(), spotify.login_pending(),
+                           spotify.soloist_version()),
                   lambda out, _err: out and self.show_account(*out))
 
-    def show_account(self, web, soloist, pending):
+    def show_account(self, web, soloist, pending, version):
         was = self.web
         self.web, self.soloist = web, soloist
         host = GLib.get_host_name()
         if soloist:
-            self.player_card.show(f"Logged in: plays as “{host}”",
-                                  "Music you pick here plays on this computer, with no window open.", ok=True)
-        else:
-            self.player_card.show("Not logged in",
-                                  f"Once: in the Spotify app (phone or computer, same network) open "
-                                  f"Devices and pick “{host}”.", "Check again")
-        if pending:
-            self.library_card.show("Waiting for the browser…",
-                                   "Log in there and allow access; it comes back here by itself.", "Cancel")
-            GLib.timeout_add(self.LOGIN_CHECK_MS, lambda: self.check_account() and False)
-        elif web:
-            self.library_card.show("Logged in", "Your playlists, search, the queue and the devices.", "Log out",
+            self.player_login.show(f"Logged in · plays as “{host}”", "Spotify's own player, no window open.",
                                    ok=True)
         else:
-            self.library_card.show("Not logged in",
-                                   "Opens the browser once to log in to your Spotify account.", "Log in")
-        self.dots["account"].set_opacity(0 if (web and soloist) else 1)
-        if web and was is False:
-            # Just logged in: everything again
-            for k in self.stale:
-                self.stale[k] = True
+            self.player_login.show("Not logged in", f"In the Spotify app: Devices → “{host}”, once.",
+                                   "Check again")
+        if pending:
+            self.library_login.show("Waiting for the browser…", "Log in there; it comes back by itself.", "Cancel")
+            GLib.timeout_add(self.CHECK_MS, lambda: self.check_account() and False)
+        elif web:
+            self.library_login.show("Logged in", "Playlists, search, the queue and devices.", "Log out", ok=True)
+        else:
+            self.library_login.show("Not logged in", "Opens the browser once.", "Log in")
+        self.version.set_text(f"Soloist {version}, renewed every week" if version else "")
+        self.dot.set_opacity(0 if (web and soloist) else 1)
         if web is False:
             self.not_logged_in()
-        self.load(self.pages.get_visible_child_name())
+        elif web and was is not True:
+            # Logged in now (or just found out): the lists, the heart
+            for key in self.lists:
+                self.asked.pop(key, None)
+            self.load(self.pages.get_visible_child_name())
+            self.song_changed(self.song)
 
     def library_button(self):
         if spotify.login_pending():
@@ -951,49 +1128,78 @@ class SpotifyBrowser(Gtk.Box):
         self.check_account()
 
     def not_logged_in(self):
-        ask = {"kind": "login", "title": "Log in to see your library", "sub": "Account → 2 · Sees your library"}
-        for page in (self.playlists, self.queue, self.devices):
+        ask = {"kind": "login", "title": "Log in to see your library", "sub": "Settings → 2 · See your library"}
+        for key, page in self.lists.items():
             page.show_items([ask], "Not logged in to your library")
-        self.results.show_items([ask] if self.entry.get_text() else [], "Not logged in to your library")
+        self.show_liked(None)
 
-    # ---------------------------------------------------------- the lists
+    # ---------------------------------------------------------- pages and lists
 
-    def show_tab(self, key):
+    def show_page(self, key):
         self.pages.set_visible_child_name(key)
-        for k, b in self.tabs.items():
-            css(b, "on", on=k == key)
+        for k, b in self.nav.items():
+            css(b, "on", on=k == key or (key == "detail" and k == self.back_to))
         if key == "search":
-            # Once on screen: before, the focus wouldn't hold
             if self.entry.get_mapped():
                 self.entry.grab_focus()
             else:
                 self.entry.connect("map", lambda e: e.grab_focus())
-        if key in ("queue", "devices"):
-            # They change by themselves: fresh each time
-            self.stale[key] = True
-        if key == "account":
+        elif key in ("library", "queue", "devices"):
+            self.back_to = key if key == "library" else self.back_to
+            self.load(key)
+        if key == "settings":
             self.check_account()
-        self.load(key)
 
     def load(self, key):
-        if not self.web or not self.stale.get(key):
+        """Fills a list in the background; a newer load wins."""
+        if key == "search":
+            self.search_now()
             return
-        self.stale[key] = False
-        page = getattr(self, key)
+        if key not in ("library", "queue", "devices", "detail"):
+            return
+        if self.web is False:
+            self.not_logged_in()
+            return
+        if not self.web:
+            return  # not known yet: check_account() comes back here
+        page = self.lists[key]
+        if key == "library":
+            what = self.library_kind.key
+            work = {"playlists": spotify.playlists, "albums": spotify.albums, "artists": spotify.artists}[what]
+            empty = f"No {what} saved yet"
+        elif key == "queue":
+            what = self.queue_kind.key
+            work = spotify.queue if what == "next" else spotify.recent
+            empty = "Nothing up next" if what == "next" else "Nothing played lately"
+            # Up next is what's coming: not something to jump to
+            page.pickable = what == "recent"
+        elif key == "devices":
+            what, work, empty = None, self.device_rows, "No devices: open Spotify somewhere"
+        elif key == "detail":
+            item = self.opened
+            what, work, empty = item["uri"], lambda: spotify.tracks(item), "Nothing in it"
+        else:
+            return
+        token = self.asked[key] = (what, self.asked.get(key, (None, 0))[1] + 1)
+        if page.items and page.items[0].get("kind") == "login":
+            page.show_items([])
+        if key == "detail" or (key == "library" and getattr(page, "what", None) != what):
+            page.show_items([])  # another list: from its skeleton
+        page.what = what
         page.loading(True)
-        work = {"playlists": spotify.playlists, "queue": spotify.queue, "devices": self.device_rows}[key]
 
         def done(items, err):
+            if self.asked.get(key) != token:
+                return
             page.loading(False)
             if err:
-                self.stale[key] = True
+                self.asked.pop(key, None)
                 if isinstance(err, spotify.NotLoggedIn):
                     self.check_account()
                 page.say(spotify_error(err), error=True)
                 return
-            empty = {"playlists": "No playlists yet", "queue": "Nothing up next",
-                     "devices": "No devices: open Spotify somewhere"}[key]
-            page.show_items(items, "" if items else empty)
+            note = (self.opened or {}).get("sub", "") if key == "detail" else ""
+            page.show_items(items, note if items else empty)
         in_thread(work, done)
 
     def device_rows(self):
@@ -1001,14 +1207,8 @@ class SpotifyBrowser(Gtk.Box):
         for d in spotify.devices():
             where = "This computer (Soloist)" if d["here"] else d["type"].capitalize()
             rows.append(dict(d, kind=d["type"] if d["type"] in SPOTIFY_ICONS else "speaker", title=d["name"],
-                             sub=where + (" · playing here" if d["active"] else "")))
-        # This computer first
+                             sub=where + (" · playing here" if d["active"] else ""), image=None))
         return sorted(rows, key=lambda d: not d["here"])
-
-    def track_changed(self):
-        self.stale["queue"] = True
-        if self.pages.get_visible_child_name() == "queue":
-            self.load("queue")
 
     def search_soon(self):
         if self.search_timer:
@@ -1019,58 +1219,75 @@ class SpotifyBrowser(Gtk.Box):
         if self.search_timer:
             GLib.source_remove(self.search_timer)
         self.search_timer = None
-        words = self.entry.get_text().strip()
-        if not self.web:
+        page = self.lists["search"]
+        if self.web is False:
             self.not_logged_in()
             return
+        words = self.entry.get_text().strip()
+        kind = None if self.search_kind.key == "all" else self.search_kind.key
         self.searched += 1
         mine = self.searched
+        page.show_items([])
         if not words:
-            self.results.show_items([])
             return
-        self.results.items = []
-        self.results.loading(True)
+        page.loading(True)
 
         def done(items, err):
             if mine != self.searched:
                 return
-            self.results.loading(False)
+            page.loading(False)
             if err:
-                self.results.say(spotify_error(err), error=True)
+                page.say(spotify_error(err), error=True)
             else:
-                self.results.show_items(items, "" if items else f"Nothing found for “{words}”")
-        in_thread(lambda: spotify.search(words), done)
+                page.show_items(items, "" if items else f"Nothing found for “{words}”")
+        in_thread(lambda: spotify.search(words, kind), done)
 
     # ---------------------------------------------------------- picking
 
-    def page_now(self):
-        name = self.pages.get_visible_child_name()
-        return getattr(self, "results" if name == "search" else name, self.playlists)
+    def pick(self, item):
+        kind = item.get("kind")
+        if kind == "login":
+            self.show_page("settings")
+        elif kind in ("playlist", "album", "liked", "artist"):
+            self.open(item)
+        else:
+            self.play(item)
+
+    def open(self, item):
+        """A playlist, album, Liked Songs or artist: its songs."""
+        here = self.pages.get_visible_child_name()
+        if here != "detail":
+            self.back_to = here
+        self.opened = item
+        self.opened_title.set_text(item["title"])
+        self.show_page("detail")
+        self.load("detail")
 
     def play(self, item):
-        if item.get("kind") == "login":
-            self.show_tab("account")
-            return
-        page = self.page_now()
+        page = self.lists.get(self.pages.get_visible_child_name()) or self.lists["library"]
         page.say(f"Playing {item['title']}…")
+        # The whole of what's open, or a song inside its context
+        uri, context = (item["uri"], None) if item.get("kind") == "context" else (item["uri"], item.get("context"))
 
         def done(_out, err):
             page.say(spotify_error(err) if err else f"Playing {item['title']}", error=bool(err))
             if err and not self.soloist:
                 self.check_account()
-        in_thread(lambda: spotify.play(item["uri"], item.get("context")), done)
+            self.refresh()
+        in_thread(lambda: spotify.play(uri, context), done)
 
     def transfer(self, device):
         if device.get("kind") == "login":
-            self.show_tab("account")
+            self.show_page("settings")
             return
-        self.devices.say(f"Moving to {device['name']}…")
+        page = self.lists["devices"]
+        page.say(f"Moving to {device['name']}…")
 
         def done(_out, err):
             if err:
-                self.devices.say(spotify_error(err), error=True)
+                page.say(spotify_error(err), error=True)
                 return
-            self.stale["devices"] = True
+            self.asked.pop("devices", None)
             self.load("devices")
         in_thread(lambda: spotify.transfer(device), done)
 
@@ -4802,7 +5019,7 @@ class Panel(Gtk.Window):
         GtkLayerShell.set_keyboard_mode(self, GtkLayerShell.KeyboardMode.EXCLUSIVE)
         GtkLayerShell.set_anchor(self, GtkLayerShell.Edge.TOP, True)
         GtkLayerShell.set_margin(self, GtkLayerShell.Edge.TOP, 6)
-        if mode in ("menu", "network", "updates", "sound", "displays", "bluetooth", "vpn"):
+        if mode in ("menu", "network", "updates", "sound", "displays", "bluetooth", "vpn", "spotify"):
             GtkLayerShell.set_anchor(self, GtkLayerShell.Edge.RIGHT, True)
             GtkLayerShell.set_margin(self, GtkLayerShell.Edge.RIGHT, 6 - SHADOW)
 
@@ -4812,7 +5029,7 @@ class Panel(Gtk.Window):
         self.frame = frame = Gtk.Box()
         frame.get_style_context().add_class("panel")
         self.content = (Menu(mode) if mode in ("sound", "displays", "bluetooth", "vpn") else
-                        {"media": Media, "calendar": Calendar, "menu": Menu, "network": Network, "updates": Updates,
+                        {"media": Media, "spotify": Spotify, "calendar": Calendar, "menu": Menu, "network": Network, "updates": Updates,
                          "wallpaper": Wallpapers}[mode]())
         frame.add(self.content)
         # Slides down from the bar when it opens, and back up when it closes
@@ -4902,7 +5119,7 @@ def restyle():
     STYLE.load_from_data(colors + CSS)
 
 
-MODES = ("media", "calendar", "menu", "network", "updates", "sound", "displays", "bluetooth", "vpn", "wallpaper")
+MODES = ("media", "spotify", "calendar", "menu", "network", "updates", "sound", "displays", "bluetooth", "vpn", "wallpaper")
 
 
 def main():

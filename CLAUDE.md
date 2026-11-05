@@ -43,9 +43,9 @@ panel-sizes puts it in place for the `bluetooth` page. Likewise
 `dev/fake_audio.py` stands in for `audio.py` on the `sound` page (many
 devices and apps, a mic with three gains), so tests never touch the
 user's real volumes or apps. `dev/fake_spotify.py` stands in for
-`spotify.py` under the media popup's player (playlists over pages, a
-search that fails, devices, both logins gone and back), so tests never
-reach the user's Spotify.
+`spotify.py` in the `spotify` popup (playlists over pages, albums, an
+empty artists page, a search that fails, devices, both logins gone and
+back), so tests never reach the user's Spotify.
 
 Content still loading (pictures, lists) shows its skeleton (`Pulse` in
 `panel.py`: a block breathing in @bg2, where the thing will be), never an

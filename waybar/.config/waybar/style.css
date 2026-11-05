@@ -19,7 +19,7 @@ window#waybar {
 }
 
 /* notch.svg draws the curved sides (12px each); the middle is plain color */
-#left, #mpris, #clock, #right, #custom-updates, #privacy {
+#left, #mpris, #clock, #right, #custom-updates, #custom-spotify, #privacy {
     background-color: @island;
     background-clip: padding-box;
     border-style: solid;
@@ -51,8 +51,9 @@ window#waybar {
 #workspaces button.urgent { color: @accent; }
 #workspaces button:hover { color: @fg; background: transparent; }
 
-#mpris, #clock, #custom-menu { transition: color 150ms ease; }
-#mpris:hover, #clock:hover, #custom-menu:hover { color: @hi; }
+#mpris, #clock, #custom-menu, #custom-spotify { transition: color 150ms ease; }
+#mpris:hover, #clock:hover, #custom-menu:hover, #custom-spotify:hover { color: @hi; }
+#custom-spotify { margin-right: 8px; color: @fg; }
 
 #custom-space-before-media, #custom-space-after-media { background: transparent; }
 

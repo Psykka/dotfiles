@@ -15,8 +15,8 @@ The popups really open, on the focused display. The media one plays the
 pretend player (dev/fake-player.py) and leaves any real one alone; the
 Bluetooth one has pretend devices (dev/fake_bluetooth.py), the sound
 one a pretend sound server (dev/fake_audio.py) and the VPN one a pretend
-daemon (dev/fake_vpn.py), and the media one a pretend Spotify under the
-player (dev/fake_spotify.py). The
+daemon (dev/fake_vpn.py), and the Spotify one a pretend Spotify
+(dev/fake_spotify.py) with the pretend player. The
 wallpaper one tries a wallpaper already downloaded on the desktop, then
 discards it: nothing is saved; its saved themes are pretend ones in a
 folder of their own ($THEME_SAVED), gone at the end. Not a stow package: nothing here is linked
@@ -149,33 +149,50 @@ def steps(mode):
             (1200, "unmute", lambda m: m.toggle_mute(), False),
             (4000, "back to progress", lambda _: None, False),
             (1500, "player quits", lambda _: stop_fake_player(), False),
-            # Spotify's lists under the player (fake_spotify.py, set up in run())
-            (1500, "playlists next page", lambda m: m.browser.playlists.turn(1), False),
-            (500, "last page", lambda m: (m.browser.playlists.turn(1), m.browser.playlists.turn(1)), False),
-            (500, "play a playlist", lambda m: m.browser.play(m.browser.playlists.items[-1]), False),
-            (800, "tab Queue", lambda m: m.browser.show_tab("queue"), False),
-            (1000, "track changes", lambda m: m.browser.track_changed(), False),
-            (1000, "tab Search", lambda m: m.browser.show_tab("search"), False),
-            (500, "search words", lambda m: (m.browser.entry.set_text("deftones"), m.browser.search_now()), False),
-            (1000, "results next page", lambda m: m.browser.results.turn(1), False),
-            (500, "search finds nothing", lambda m: (m.browser.entry.set_text("nothing"),
-                                                    m.browser.search_now()), False),
-            (1000, "search fails", lambda m: (m.browser.entry.set_text("fail"), m.browser.search_now()), False),
-            (1000, "search cleared", lambda m: (m.browser.entry.set_text(""), m.browser.search_now()), False),
-            (500, "tab Devices", lambda m: m.browser.show_tab("devices"), False),
-            (1000, "move to the phone", lambda m: m.browser.transfer(m.browser.devices.items[1]), False),
-            (1500, "tab Account", lambda m: m.browser.show_tab("account"), False),
+            (2000, "end", lambda _: None, False),
+        ]
+    if mode == "spotify":
+        # A pretend Spotify (fake_spotify.py, set up in run()) and the
+        # pretend player for its player
+        def chip(chips, key):
+            chips.pick(key)
+        return [
+            (0, "a player starts", lambda _: start_fake_player(), False),
+            (1500, "playlists next page", lambda s: s.lists["library"].turn(1), False),
+            (500, "albums", lambda s: chip(s.library_kind, "albums"), False),
+            (1000, "artists (none)", lambda s: chip(s.library_kind, "artists"), False),
+            (1000, "playlists again", lambda s: chip(s.library_kind, "playlists"), False),
+            (1000, "open Liked Songs", lambda s: s.pick(s.lists["library"].items[0]), False),
+            (1000, "its next page", lambda s: s.lists["detail"].turn(1), False),
+            (500, "play a song", lambda s: s.pick(s.lists["detail"].items[8]), False),
+            (800, "play it all", lambda s: s.play_all.clicked(), False),
+            (800, "back", lambda s: s.show_page(s.back_to), False),
+            (800, "search", lambda s: s.show_page("search"), False),
+            (500, "search words", lambda s: (s.entry.set_text("deftones"), s.search_now()), False),
+            (1000, "only songs", lambda s: chip(s.search_kind, "track"), False),
+            (1000, "only albums", lambda s: chip(s.search_kind, "album"), False),
+            (1000, "open an album", lambda s: s.pick(s.lists["search"].items[0]), False),
+            (1000, "back to search", lambda s: s.show_page(s.back_to), False),
+            (500, "finds nothing", lambda s: (s.entry.set_text("nothing"), s.search_now()), False),
+            (1000, "fails", lambda s: (s.entry.set_text("fail"), s.search_now()), False),
+            (1000, "queue", lambda s: s.show_page("queue"), False),
+            (1000, "recently played", lambda s: chip(s.queue_kind, "recent"), False),
+            (1000, "devices", lambda s: s.show_page("devices"), False),
+            (1000, "move to the phone", lambda s: s.transfer(s.lists["devices"].items[1]), False),
+            (1500, "like the song", lambda s: s.toggle_liked(), False),
+            (800, "shuffle", lambda s: s.toggle_shuffle(), False),
+            (800, "repeat", lambda s: s.cycle_repeat(), False),
+            (800, "next song", lambda s: subprocess.run(["playerctl", "-p", "fakeplayer", "next"]), False),
+            (1500, "settings", lambda s: s.show_page("settings"), False),
             # The two logins gone, then back
-            (800, "player logged out", lambda m: (fake_spotify().log_out_soloist(), m.browser.check_account()), False),
-            (800, "tab Playlists", lambda m: m.browser.show_tab("playlists"), False),
-            (800, "play without it", lambda m: m.browser.play(m.browser.playlists.items[0]), False),
-            (800, "tab Account again", lambda m: m.browser.show_tab("account"), False),
-            (800, "library logged out", lambda m: (fake_spotify().log_out(), m.browser.check_account()), False),
-            (800, "tab Playlists asks", lambda m: m.browser.show_tab("playlists"), False),
-            (800, "go log in", lambda m: m.browser.play(m.browser.playlists.items[0]), False),
-            (800, "log in (browser)", lambda m: m.browser.library_button(), False),
-            (2500, "player back", lambda m: (fake_spotify().log_in_soloist(), m.browser.check_account()), False),
-            (1000, "tab Playlists again", lambda m: m.browser.show_tab("playlists"), False),
+            (800, "player logged out", lambda s: (fake_spotify().log_out_soloist(), s.check_account()), False),
+            (800, "library logged out", lambda s: (fake_spotify().log_out(), s.check_account()), False),
+            (800, "library page asks", lambda s: s.show_page("library"), False),
+            (800, "go log in", lambda s: s.pick(s.lists["library"].items[0]), False),
+            (800, "log in (browser)", lambda s: s.library_button(), False),
+            (2500, "player back", lambda s: (fake_spotify().log_in_soloist(), s.check_account()), False),
+            (1000, "library again", lambda s: s.show_page("library"), False),
+            (1500, "player quits", lambda _: stop_fake_player(), False),
             (2000, "end", lambda _: None, False),
         ]
     if mode == "bluetooth":
@@ -296,7 +313,7 @@ def name_entry(w):
     return next(c for c in w.bar.get_children() if isinstance(c, Gtk.Entry))
 
 
-MODES = ("wallpaper", "menu", "sound", "bluetooth", "vpn", "calendar", "media")
+MODES = ("wallpaper", "menu", "sound", "bluetooth", "vpn", "calendar", "media", "spotify")
 
 
 def run(mode, shots):
@@ -320,10 +337,11 @@ def run(mode, shots):
         sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
         import fake_audio
         panel.audio = fake_audio
-    if mode == "media":
+    if mode == "spotify":
         sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
         import fake_spotify
         panel.spotify = fake_spotify
+        panel.SPOTIFY_PLAYERCTL = ["playerctl", "-p", "fakeplayer"]
     if mode in ("vpn", "menu"):
         sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
         import fake_vpn

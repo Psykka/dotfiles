@@ -15,6 +15,7 @@ Usage: spotify.py login [--notify] log in (opens the browser); --notify
        spotify.py length TRACK_ID  a track's length in ms (for soloist-mpris)
 """
 import base64
+import concurrent.futures
 import hashlib
 import http.server
 import json
@@ -246,11 +247,11 @@ def names(people):
     return ", ".join(p.get("name", "") for p in people or [] if p)
 
 
-def row(kind, uri, title, sub, images=None, context=None):
-    """context: what a song plays in (its album), so "next" goes on
-    through it instead of Spotify's recommendations."""
+def row(kind, uri, title, sub, images=None, context=None, length=None):
+    """context: what a song plays in (its album, the playlist it's in), so
+    "next" goes on through it instead of Spotify's recommendations."""
     return {"kind": kind, "uri": uri, "title": title or "", "sub": sub or "", "image": picture(images),
-            "context": context}
+            "context": context, "length": length}
 
 
 def picture(images):
@@ -262,45 +263,122 @@ def picture(images):
     return pick["url"] if pick else None
 
 
+def song(t, context=None, images=None):
+    album = t.get("album") or {}
+    return row("track", t["uri"], t.get("name"), names(t.get("artists")), images or album.get("images"),
+               context or album.get("uri"), t.get("duration_ms"))
+
+
+def pages(path, key=None, most=500):
+    """Every item of a paged list, up to `most`. After the first page the
+    rest come all at once (Liked Songs: 8 pages, not 8 waits)."""
+    sep = "&" if "?" in path else "?"
+    first = api("GET", f"{path}{sep}limit={PAGE}")
+    first = first.get(key) if key else first
+    out = [i for i in first.get("items") or [] if i]
+    total = first.get("total")
+    if total is None:
+        # Cursor pages (followed artists): one after another
+        url = first.get("next")
+        while url and len(out) < most:
+            page = api("GET", url[len(API):])
+            page = page.get(key) if key else page
+            out += [i for i in page.get("items") or [] if i]
+            url = page.get("next")
+        return out[:most]
+    rest = range(PAGE, min(total, most), PAGE)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=6) as pool:
+        for page in pool.map(lambda o: api("GET", f"{path}{sep}limit={PAGE}&offset={o}"), rest):
+            page = page.get(key) if key else page
+            out += [i for i in page.get("items") or [] if i]
+    return out[:most]
+
+
 def playlists():
     """Liked Songs first, then every playlist (followed ones too)."""
     me = api("GET", "me")
-    liked = api("GET", "me/tracks?limit=1").get("total", 0)
-    rows = [row("liked", f"spotify:user:{me['id']}:collection", "Liked Songs", f"{liked} songs")]
-    offset = 0
-    while True:
-        page = api("GET", f"me/playlists?limit={PAGE}&offset={offset}")
-        for p in page.get("items") or []:
-            if p:
-                total = (p.get("items") or p.get("tracks") or {}).get("total")
-                owner = (p.get("owner") or {}).get("display_name") or ""
-                sub = ", ".join(x for x in (owner, f"{total} songs" if total is not None else "") if x)
-                rows.append(row("playlist", p["uri"], p.get("name"), sub, p.get("images")))
-        offset += PAGE
-        if not page.get("next") or offset >= 500:
-            return rows
+    liked_count = api("GET", "me/tracks?limit=1").get("total", 0)
+    return ([row("liked", f"spotify:user:{me['id']}:collection", "Liked Songs", f"{liked_count} songs")]
+            + [playlist_row(p) for p in pages("me/playlists")])
 
 
-def search(words):
+def album_row(a):
+    return row("album", a["uri"], a.get("name"), names(a.get("artists")), a.get("images"))
+
+
+def artist_row(a):
+    return row("artist", a["uri"], a.get("name"), "Artist", a.get("images"))
+
+
+def playlist_row(p):
+    total = (p.get("items") or p.get("tracks") or {}).get("total")
+    owner = (p.get("owner") or {}).get("display_name") or ""
+    sub = ", ".join(x for x in (owner, f"{total} songs" if total is not None else "") if x)
+    return row("playlist", p["uri"], p.get("name"), sub, p.get("images"))
+
+
+def search(words, kind=None):
+    """kind: "track", "artist", "album" or "playlist"; None: a bit of each,
+    the best artist first."""
     if not words.strip():
         return []
-    q = urllib.parse.urlencode({"q": words, "type": "artist,track,album,playlist", "limit": 10})
-    r = api("GET", "search?" + q)
+    types = kind or "artist,track,album,playlist"
+    r = api("GET", "search?" + urllib.parse.urlencode({"q": words, "type": types, "limit": 30 if kind else 10}))
     items = lambda k: [x for x in (r.get(k) or {}).get("items") or [] if x]
-    out = [row("artist", a["uri"], a.get("name"), "Artist", a.get("images")) for a in items("artists")[:1]]
-    out += [row("track", t["uri"], t.get("name"), names(t.get("artists")), (t.get("album") or {}).get("images"),
-                (t.get("album") or {}).get("uri")) for t in items("tracks")]
-    out += [row("album", a["uri"], a.get("name"), "Album · " + names(a.get("artists")), a.get("images"))
-            for a in items("albums")[:4]]
-    out += [row("playlist", p["uri"], p.get("name"), "Playlist · " + ((p.get("owner") or {}).get("display_name") or ""),
-                p.get("images")) for p in items("playlists")[:4]]
+    if kind:
+        make = {"track": song, "artist": artist_row, "album": album_row, "playlist": playlist_row}[kind]
+        return [make(x) for x in items(kind + "s")]
+    return ([artist_row(a) for a in items("artists")[:1]] + [song(t) for t in items("tracks")]
+            + [album_row(a) for a in items("albums")[:4]] + [playlist_row(p) for p in items("playlists")[:4]])
+
+
+def albums():
+    return [album_row(i["album"]) for i in pages("me/albums") if i.get("album")]
+
+
+def artists():
+    return [artist_row(a) for a in pages("me/following?type=artist", key="artists")]
+
+
+def recent():
+    """Played lately, each song once."""
+    seen, out = set(), []
+    for i in api("GET", "me/player/recently-played?limit=50").get("items") or []:
+        t = i.get("track") or {}
+        if t.get("uri") and t["uri"] not in seen:
+            seen.add(t["uri"])
+            out.append(song(t, (i.get("context") or {}).get("uri")))
     return out
+
+
+def tracks(item):
+    """The songs of a playlist, album, Liked Songs or artist (their top
+    ones), each set to play inside it."""
+    kind, uri = item["kind"], item["uri"]
+    key = uri.rsplit(":", 1)[-1]
+    if kind == "album":
+        return [song(t, uri) | {"image": item.get("image")} for t in pages(f"albums/{key}/tracks")]
+    if kind == "artist":
+        return [song(t) for t in api("GET", f"artists/{key}/top-tracks?market=from_token").get("tracks") or []]
+    if kind == "liked":
+        return [song(i["track"], uri) for i in pages("me/tracks") if i.get("track")]
+    return [song(i.get("track") or i.get("item"), uri) for i in pages(f"playlists/{key}/items")
+            if (i.get("track") or i.get("item") or {}).get("uri", "").startswith("spotify:track:")]
+
+
+def liked(track_uri):
+    return bool(api("GET", "me/tracks/contains?ids=" + track_uri.rsplit(":", 1)[-1])[0])
+
+
+def set_liked(track_uri, on):
+    api("PUT" if on else "DELETE", "me/tracks?ids=" + track_uri.rsplit(":", 1)[-1])
 
 
 def queue():
     r = api("GET", "me/player/queue") or {}
-    return [row("track", t["uri"], t.get("name"), names(t.get("artists") or (t.get("show") and [t["show"]])),
-                (t.get("album") or t).get("images")) for t in r.get("queue") or [] if t]
+    return [song(t) if t.get("type") == "track" else
+            row("episode", t["uri"], t.get("name"), (t.get("show") or {}).get("name"), t.get("images"))
+            for t in r.get("queue") or [] if t and t.get("uri")]
 
 
 def devices():
@@ -333,6 +411,15 @@ def soloist_up():
         return "logged in: yes" in ctl("status")
     except (Failed, OSError, subprocess.TimeoutExpired):
         return False
+
+
+def soloist_version():
+    """Its version and build date, e.g. "1.3.10.44 (20261105)"."""
+    try:
+        out = subprocess.run([SOLOIST, "--version"], capture_output=True, text=True, timeout=5).stdout.split()
+        return f"{out[1]} {out[4]}" if len(out) > 4 else (out[1] if len(out) > 1 else None)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
 
 
 def play(uri, context=None):

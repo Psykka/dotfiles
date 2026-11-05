@@ -16,7 +16,7 @@
     "expand-left": true,
     "modules-left": ["group/left", "custom/space#before-media", "mpris", "custom/space#after-media"],
     "modules-center": ["group/mirror", "clock", "privacy"],
-    "modules-right": ["custom/updates", "group/right"],
+    "modules-right": ["custom/updates", "custom/spotify", "group/right"],
 
     // Tux and the workspaces share the left island
     "group/left": {
@@ -43,21 +43,14 @@
     "custom/space#before-media": { "format": " ", "expand": true, "tooltip": false },
     "custom/space#after-media": { "format": " ", "expand": true, "tooltip": false },
 
-    // Media: app icon, artist and title; dimmed while paused (still a way
+    // Media: a music note (whatever plays it), artist and title; dimmed while paused (still a way
     // back to it), gone when nothing is loaded (an empty format hides the
     // module, so no invisible spot is left under the mouse).
     // Left click: mini player, right click: focus the app
     "mpris": {
-        "format": "{player_icon}  {artist} · {title}",
+        "format": "  {artist} · {title}",
         "format-stopped": "",
         "max-length": 60,
-        "player-icons": {
-            "default": "",
-            "firefox": "\ue007",
-            "chromium": "",
-            "spotify": "",
-            "soloist": ""
-        },
         "tooltip": false,
         "on-click": "~/.config/waybar/media-click.sh panel",
         "on-click-right": "~/.config/waybar/media-click.sh focus",
@@ -132,6 +125,17 @@
     // VPN (vpn/, vpnd.service): a shield, only while one is on (turned on
     // from the menu's VPN page); pulsing while it connects, red when it
     // dropped. Left click: VPN page, right click: off
+    // Spotify's mini client (library, search, queue, devices): an island of
+    // its own, only where Soloist is set up (soloist/ in the dotfiles)
+    "custom/spotify": {
+        // Any text: a custom module with none is hidden
+        "exec": "echo on",
+        "exec-if": "test -x ~/.local/bin/soloist",
+        "interval": "once",
+        "format": "",
+        "tooltip": false,
+        "on-click": "~/.config/waybar/panel.py spotify"
+    },
     "custom/vpn": {
         "exec": "~/.config/waybar/vpn.py bar",
         "return-type": "json",
