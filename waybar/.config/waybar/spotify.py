@@ -30,6 +30,8 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+from texts import tr
+
 SOLOIST = os.path.expanduser("~/.local/bin/soloist")
 # Soloist's own Connect device ID: tells it apart from the official app,
 # which also goes by the hostname
@@ -91,7 +93,7 @@ def login():
     logs in and comes back here with a code, traded for the tokens."""
     cid = client_id()
     if not cid:
-        raise Failed("No Spotify app: store its client ID in the keyring first")
+        raise Failed(tr("spotify.no-spotify-app-store-its"))
     verifier = secrets.token_urlsafe(64)
     challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
     state = secrets.token_urlsafe(16)
@@ -111,8 +113,8 @@ def login():
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.end_headers()
-            done = "Logged in" if "code" in got else "Not logged in"
-            self.wfile.write(f"<p style='font:16px sans-serif'>{done}. You can close this tab.</p>".encode())
+            done = tr("spotify.logged-in") if "code" in got else tr("spotify.not-logged-in")
+            self.wfile.write(tr("spotify.p-style-font-16px-sans", done=done).encode())
 
         def log_message(self, *_):
             pass
@@ -120,7 +122,7 @@ def login():
     try:
         server = http.server.HTTPServer((host, port), Back)
     except OSError:
-        raise Failed(f"Port {port} is busy: another login is open")
+        raise Failed(tr("spotify.port-is-busy-another-login", port=port))
     server.timeout = 1
     url = ACCOUNTS + "authorize?" + urllib.parse.urlencode(dict(
         client_id=cid, response_type="code", redirect_uri=redirect, scope=SCOPES, state=state,
@@ -134,7 +136,7 @@ def login():
     finally:
         server.server_close()
     if "code" not in got:
-        raise Failed("Login cancelled" if got else "Login timed out")
+        raise Failed(tr("spotify.login-cancelled") if got else tr("spotify.login-timed-out"))
     keep(token_request(grant_type="authorization_code", code=got["code"], redirect_uri=redirect,
                        client_id=cid, code_verifier=verifier))
 
@@ -188,15 +190,15 @@ def token_request(**form):
         if e.code in (400, 401):
             # The refresh token was revoked (or the app's ID changed)
             raise NotLoggedIn()
-        raise Failed(f"Spotify answered {e.code}")
+        raise Failed(tr("spotify.spotify-answered", code=e.code))
     except (OSError, ValueError):
-        raise Failed("Can't reach Spotify")
+        raise Failed(tr("spotify.can-t-reach-spotify"))
 
 
 def keep(tokens):
     # Spotify may hand out a new refresh token each time: the old one dies
     if tokens.get("refresh_token"):
-        store("refresh-token", tokens["refresh_token"], "Spotify login (the bar's media popup)")
+        store("refresh-token", tokens["refresh_token"], tr("spotify.spotify-login-the-bar-s"))
     fd = os.open(TOKEN_FILE, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w") as f:
         json.dump({"access": tokens["access_token"], "until": time.time() + tokens.get("expires_in", 3600) - 60}, f)
@@ -231,16 +233,16 @@ def api(method, path, body=None, fresh=False):
         if e.code == 401 and not fresh:
             return api(method, path, body, fresh=True)
         if e.code == 429:
-            raise Failed("Spotify asks to wait a moment")
+            raise Failed(tr("spotify.spotify-asks-to-wait-a"))
         if e.code == 404 and path.startswith("me/player"):
-            raise Failed("No device is playing")
+            raise Failed(tr("spotify.no-device-is-playing"))
         try:
             msg = json.load(e)["error"]["message"]
         except (ValueError, KeyError, TypeError):
-            msg = f"Spotify answered {e.code}"
+            msg = tr("spotify.spotify-answered", code=e.code)
         raise Failed(msg)
     except (OSError, ValueError):
-        raise Failed("Can't reach Spotify")
+        raise Failed(tr("spotify.can-t-reach-spotify"))
 
 
 def names(people):
@@ -298,7 +300,7 @@ def playlists():
     """Liked Songs first, then every playlist (followed ones too)."""
     me = api("GET", "me")
     liked_count = api("GET", "me/tracks?limit=1").get("total", 0)
-    return ([row("liked", f"spotify:user:{me['id']}:collection", "Liked Songs", f"{liked_count} songs")]
+    return ([row("liked", f"spotify:user:{me['id']}:collection", tr("spotify.liked-songs"), tr("spotify.songs-2", liked_count=liked_count))]
             + [playlist_row(p) for p in pages("me/playlists")])
 
 
@@ -307,13 +309,13 @@ def album_row(a):
 
 
 def artist_row(a):
-    return row("artist", a["uri"], a.get("name"), "Artist", a.get("images"))
+    return row("artist", a["uri"], a.get("name"), tr("spotify.artist"), a.get("images"))
 
 
 def playlist_row(p):
     total = (p.get("items") or p.get("tracks") or {}).get("total")
     owner = (p.get("owner") or {}).get("display_name") or ""
-    sub = ", ".join(x for x in (owner, f"{total} songs" if total is not None else "") if x)
+    sub = ", ".join(x for x in (owner, tr("spotify.songs-3", total=total) if total is not None else "") if x)
     return row("playlist", p["uri"], p.get("name"), sub, p.get("images"))
 
 
@@ -413,7 +415,7 @@ def ctl(*args):
     r = subprocess.run([SOLOIST, "ctl", *args], capture_output=True, text=True, timeout=15)
     if r.returncode:
         raise Failed((r.stderr or r.stdout).strip().splitlines()[-1] if (r.stderr or r.stdout).strip()
-                     else "Soloist didn't answer")
+                     else tr("spotify.soloist-didn-t-answer"))
     return r.stdout
 
 
@@ -439,7 +441,7 @@ def play(uri, context=None):
     "next" would go to Spotify's recommendations (and the Web API's queue
     repeats the one song)."""
     if not soloist_up():
-        raise Failed("Soloist isn't logged in: pick this computer once in the Spotify app")
+        raise Failed(tr("spotify.soloist-isn-t-logged-in"))
     if not context:
         ctl("play", uri)
         return
@@ -473,9 +475,9 @@ def main():
         tell = "--notify" in args
         try:
             login()
-            done = ("Logged in to your Spotify library", "Playlists and search are in the media popup now")
+            done = (tr("spotify.logged-in-to-your-spotify"), tr("spotify.playlists-and-search-are-in"))
         except (Failed, NotLoggedIn) as e:
-            done = ("Spotify login didn't finish", str(e) or "Spotify said no")
+            done = (tr("spotify.spotify-login-didn-t-finish"), str(e) or tr("spotify.spotify-said-no"))
         finally:
             if login_pid() == os.getpid():
                 os.remove(LOGIN_PID)

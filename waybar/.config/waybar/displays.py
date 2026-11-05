@@ -17,6 +17,7 @@ import os
 import re
 import subprocess
 import sys
+from texts import tr
 
 # Included by the sway config: same path there, so no XDG_STATE_HOME here
 CONF = os.path.expanduser("~/.local/state/sway-displays.conf")
@@ -46,13 +47,13 @@ def outputs():
 
 def title(o):
     if o["name"].startswith(("eDP", "LVDS", "DSI")):
-        return "Built-in display"
-    model = o["model"] if o["model"] not in ("", "Unknown") else ""
-    return f"{o['make']} {model}".strip() if o["make"] not in ("", "Unknown") else o["name"]
+        return tr("displays.built-in-display")
+    model = o["model"] if o["model"] not in ("", tr("displays.unknown")) else ""
+    return f"{o['make']} {model}".strip() if o["make"] not in ("", tr("displays.unknown")) else o["name"]
 
 
 def mode_text(m):
-    return f"{m['width']}×{m['height']} · {round(m['refresh'] / 1000)} Hz"
+    return tr("displays.hz", width=m['width'], height=m['height'], value=round(m['refresh'] / 1000))
 
 
 def modes(o):

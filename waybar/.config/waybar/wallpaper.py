@@ -38,6 +38,7 @@ import gi
 
 gi.require_version("GdkPixbuf", "2.0")
 from gi.repository import GdkPixbuf, GLib  # noqa: E402
+from texts import tr
 
 try:
     gi.require_version("Secret", "1")
@@ -56,11 +57,11 @@ SAVED = pathlib.Path(os.environ.get("THEME_SAVED") or HOME / ".local/state/theme
 IMAGES = (".jpg", ".jpeg", ".png", ".webp")
 
 API = "https://wallhaven.cc/api/v1/search"
-SORTS = [("relevance", "Relevance"), ("date_added", "Latest"), ("toplist", "Top"), ("views", "Views"),
-         ("favorites", "Favorites"), ("random", "Random")]
-RANGES = [("1d", "Day"), ("1w", "Week"), ("1M", "Month"), ("3M", "3 months"), ("1y", "Year")]
-SIZES = [("", "Any"), ("1920x1080", "1080p"), ("2560x1440", "1440p"), ("3840x2160", "4K")]
-RATIOS = [("", "Any"), ("16x9", "16:9"), ("16x10", "16:10"), ("21x9", "21:9"), ("9x16", "Portrait")]
+SORTS = [("relevance", tr("wallpaper.relevance")), ("date_added", tr("wallpaper.latest")), ("toplist", tr("wallpaper.top")), ("views", tr("wallpaper.views")),
+         ("favorites", tr("wallpaper.favorites")), ("random", tr("wallpaper.random"))]
+RANGES = [("1d", tr("wallpaper.day")), ("1w", tr("wallpaper.week")), ("1M", tr("wallpaper.month")), ("3M", tr("wallpaper.3-months")), ("1y", tr("wallpaper.year"))]
+SIZES = [("", tr("wallpaper.any")), ("1920x1080", "1080p"), ("2560x1440", "1440p"), ("3840x2160", "4K")]
+RATIOS = [("", tr("wallpaper.any")), ("16x9", "16:9"), ("16x10", "16:10"), ("21x9", "21:9"), ("9x16", tr("wallpaper.portrait"))]
 # The only colors Wallhaven searches by
 COLORS = ["660000", "990000", "cc0000", "cc3333", "ea4c88", "993399", "663399", "333399",
           "0066cc", "0099cc", "66cccc", "77cc33", "669900", "336600", "666600", "999900",
@@ -76,18 +77,18 @@ FILTERS = {"q": "", "general": True, "anime": False, "people": False,
 GRAYS = ["bg0", "bg1", "surface", "bg2", "line", "faint", "off", "mute", "sub", "fg", "hi", "island"]
 # Dark or light: the palette (themes/dark.ini, light.ini) the grays come
 # from, and these keys of it too
-TONES = [("dark", "Dark"), ("light", "Light")]
+TONES = [("dark", tr("wallpaper.dark")), ("light", tr("wallpaper.light"))]
 TONE_KEYS = ["scheme", "gtk_theme", "prefer_dark", "vscode_type", "shadow",
              "black", "red", "green", "yellow", "blue", "magenta", "cyan", "white",
              "bright_black", "bright_red", "bright_green", "bright_yellow",
              "bright_blue", "bright_magenta", "bright_cyan", "bright_white"]
 COLOR_KEYS = GRAYS + ["accent"] + TONE_KEYS
 STYLE = {"tint": 0.12, "shade": 0.0, "light": 0.75}
-PRESETS = [("Subtle", {"tint": 0.06, "shade": 0.0, "light": 0.78}),
-           ("Tinted", {"tint": 0.14, "shade": 0.0, "light": 0.74}),
-           ("Vivid", {"tint": 0.24, "shade": 0.01, "light": 0.68}),
-           ("Pastel", {"tint": 0.10, "shade": 0.02, "light": 0.84}),
-           ("Dim", {"tint": 0.08, "shade": -0.03, "light": 0.70})]
+PRESETS = [(tr("wallpaper.subtle"), {"tint": 0.06, "shade": 0.0, "light": 0.78}),
+           (tr("wallpaper.tinted"), {"tint": 0.14, "shade": 0.0, "light": 0.74}),
+           (tr("wallpaper.vivid"), {"tint": 0.24, "shade": 0.01, "light": 0.68}),
+           (tr("wallpaper.pastel"), {"tint": 0.10, "shade": 0.02, "light": 0.84}),
+           (tr("wallpaper.dim"), {"tint": 0.08, "shade": -0.03, "light": 0.70})]
 EDIT = {"brightness": 100, "saturation": 100, "blur": 0}
 
 # Thumbnails downloaded at once
@@ -158,7 +159,7 @@ def set_key(key):
         try:
             if key:
                 stored = Secret.password_store_sync(_schema(), KEY_ATTRS, Secret.COLLECTION_DEFAULT,
-                                                    "Wallhaven API key", key, None)
+                                                    tr("wallpaper.wallhaven-api-key"), key, None)
             else:
                 Secret.password_clear_sync(_schema(), KEY_ATTRS, None)
         except GLib.Error:
@@ -208,7 +209,7 @@ def search(f, page=1, seed=None):
             with fetch(API + "?" + urllib.parse.urlencode({**params, "page": remote})) as r:
                 data = json.load(r)
         except ValueError as e:
-            raise OSError(f"bad answer from Wallhaven ({e})")
+            raise OSError(tr("wallpaper.bad-answer-from-wallhaven", e=e))
         _last_answer.update(key=key, data=data)
     meta = data.get("meta", {})
     per = meta.get("per_page")

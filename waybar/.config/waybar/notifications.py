@@ -43,6 +43,7 @@ import cairo  # noqa: E402
 from gi.repository import Gdk, GdkPixbuf, Gio, GLib, Gtk, GtkLayerShell, Pango  # noqa: E402
 
 import displays  # noqa: E402
+from texts import tr
 
 NAME = "org.freedesktop.Notifications"
 PATH = "/org/freedesktop/Notifications"
@@ -684,7 +685,7 @@ def main():
     elif cmd[0] == "dismiss" and len(cmd) == 2:
         ask("DismissAll") if cmd[1] == "all" else ask("CloseNotification", int(cmd[1]))
     elif cmd[0] == "clear":
-        ask("Clear")
+        ask(tr("notifications.clear"))
     else:
         sys.exit(__doc__.split("\n\n")[-1])
 

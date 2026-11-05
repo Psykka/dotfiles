@@ -20,6 +20,7 @@ import subprocess
 import sys
 import threading
 import time
+from texts import tr
 
 # Our own recording stream (the Sound page's meter), left out of "an app is
 # using the microphone"
@@ -266,18 +267,18 @@ def fix():
     done = []
     sources = real_sources()
     if not sources:
-        return ["No microphone found: is it plugged in?"]
+        return [tr("sound.no-microphone-found-is-it")]
     default = find(sources, run("pactl", "get-default-source"))
     if not default:
         default = sources[0]
         run("pactl", "set-default-source", default["name"])
-        done.append(f"Input set to {default['properties'].get('device.nick', default['name'])}")
+        done.append(tr("sound.input-set-to", value=default['properties'].get('device.nick', default['name'])))
     if default["mute"]:
         run("pactl", "set-source-mute", default["name"], "0")
-        done.append("Unmuted the input")
+        done.append(tr("sound.unmuted-the-input"))
     if percent(default["volume"]) < 20:
         run("pactl", "set-source-volume", default["name"], "100%")
-        done.append("Input volume raised to 100%")
+        done.append(tr("sound.input-volume-raised-to-100"))
 
     props = default["properties"]
     if "alsa.card" in props:
@@ -288,9 +289,9 @@ def fix():
             # Boosts sit at 0 on purpose; raising them only adds noise
             if value == 0 and "boost" not in c["name"].lower():
                 value = saved.get(control) or DEFAULT_GAIN
-                done.append(f"Hardware gain '{c['name']}' {c['index']} raised from 0% to {value}%")
+                done.append(tr("sound.hardware-gain-raised-from-0", name=c['name'], index=c['index'], value=value))
             elif not c["on"]:
-                done.append(f"Hardware capture '{c['name']}' {c['index']} turned on")
+                done.append(tr("sound.hardware-capture-turned-on", name=c['name'], index=c['index']))
             if value != c["percent"] or not c["on"]:
                 set_gain(props["alsa.card"], c["name"], c["index"], value)
             save_gain(key, control, value)
@@ -298,15 +299,15 @@ def fix():
     for index, app, source in recording(sources):
         if source != default["index"]:
             run("pactl", "move-source-output", str(index), default["name"])
-            done.append(f"{app} moved to this microphone")
+            done.append(tr("sound.moved-to-this-microphone", app=app))
     sink = run("pactl", "get-default-sink")
     sinks = {s["index"]: s["name"] for s in pactl("sinks")}
     for i in pactl("sink-inputs"):
         if sinks.get(i["sink"]) not in (None, sink):
             run("pactl", "move-sink-input", str(i["index"]), sink)
             name = i["properties"].get("application.name", "An app")
-            done.append(f"{name} moved to the default output")
-    return done or ["Nothing to fix in the settings. If it is still silent, check the headset's own mute switch"]
+            done.append(tr("sound.moved-to-the-default-output", name=name))
+    return done or [tr("sound.nothing-to-fix-in-the")]
 
 
 # ---------------------------------------------------------------- meter

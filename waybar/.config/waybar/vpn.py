@@ -24,6 +24,7 @@ import sys
 import time
 
 from gi.repository import GLib
+from texts import tr
 
 SOCKET = os.environ.get("VPN_SOCKET", "/run/vpn/vpnd.sock")
 # openconnect's --protocol names, as the page lists them
@@ -54,7 +55,7 @@ def call(request):
                 data += chunk
         answer = json.loads(data)
     except (OSError, ValueError):
-        return None, "The VPN service isn't running"
+        return None, tr("vpn.the-vpn-service-isn-t-2")
     return answer.get("status"), answer.get("error")
 
 
@@ -243,7 +244,7 @@ def import_source(source, name, username="", password=""):
     """Error text, or None."""
     text = _text(source)
     if not text:
-        return "Couldn't read it" if source[0] == "file" else "NetworkManager didn't hand it over"
+        return tr("vpn.couldn-t-read-it") if source[0] == "file" else tr("vpn.networkmanager-didn-t-hand-it")
     return call({"cmd": "import", "import": {"name": name, "text": text, "username": username,
                                              "password": password}})[1]
 
@@ -364,16 +365,16 @@ def run_app(args):
     info = app_info(os.environ.get("DESKTOP_ENTRY_ID", "")) if os.environ.get("DESKTOP_ENTRY_ID") else None
     name = info[0] if info else os.path.basename(args[0])
     if not s:
-        notify(f"{name} uses the VPN, whose service isn't running", "sudo systemctl start vpnd")
+        notify(tr("vpn.uses-the-vpn-whose-service", name=name), "sudo systemctl start vpnd")
         return 1
     if s["state"] not in ("on", "connecting"):
-        notify(f"{name} uses the VPN, which is off",
-               "Turn a VPN on in the menu, or take it off the VPN's apps")
+        notify(tr("vpn.uses-the-vpn-which-is", name=name),
+               tr("vpn.turn-a-vpn-on-in"))
         return 1
     exe = os.path.basename(args[0])
     if exe not in ("flatpak", "env", "sh", "bash", "gtk-launch") and outside(exe):
-        notify(f"{name} is already open outside the VPN",
-               "Close it and open it again: a new window of it would not use the VPN")
+        notify(tr("vpn.is-already-open-outside-the", name=name),
+               tr("vpn.close-it-and-open-it"))
         return 1
     os.execvp("vpn", ["vpn", "run", "--"] + args)
 
@@ -385,9 +386,9 @@ def bar():
     def show(s):
         state = s["state"] if s else "off"
         text = "\uf3ed" if state in ("on", "connecting", "dropped") else ""
-        tip = {"on": f"{s and s['profile']} · on" + (" · chosen apps" if s and s["mode"] == "apps" else ""),
-               "connecting": f"{s and s['profile']} · connecting",
-               "dropped": f"{s and s['profile']} dropped: {s and s['error']}"}.get(state, "")
+        tip = {"on": tr("vpn.on", value=s and s['profile']) + (tr("vpn.chosen-apps-2") if s and s["mode"] == "apps" else ""),
+               "connecting": tr("vpn.connecting-2", value=s and s['profile']),
+               "dropped": tr("vpn.dropped-2", value=s and s['profile'], value2=s and s['error'])}.get(state, "")
         print(json.dumps({"text": text, "class": state, "alt": state, "tooltip": tip}), flush=True)
 
     while True:
