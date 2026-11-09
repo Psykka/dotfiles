@@ -146,6 +146,9 @@ exec playerctld daemon
 # Puts back the microphone gains a headset loses on replug (Sound page)
 exec ~/.config/waybar/audio.py watch
 exec wl-paste --watch cliphist store
+# Phone notifications, battery and files (KDE Connect); they reach
+# notifications.py like any other app's
+exec kdeconnectd
 
 # Displays: main display, resolution, scale and order, set in the menu's
 # Displays page (written by ~/.config/waybar/displays.py; none until then)

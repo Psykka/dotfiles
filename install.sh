@@ -32,14 +32,14 @@ case $distro in
         greetd tuigreet gnome-keyring-pam
         gtk-layer-shell python3-gobject python3-i3ipc libsecret jetbrains-mono-fonts-all rsms-inter-fonts google-noto-sans-cjk-vf-fonts
         google-noto-color-emoji-fonts fontawesome-6-free-fonts
-        fontawesome-6-brands-fonts adwaita-mono-fonts papirus-icon-theme-dark" ;;
+        fontawesome-6-brands-fonts adwaita-mono-fonts papirus-icon-theme-dark kde-connect" ;;
     arch) packages="$common go imagemagick libnotify libpulse networkmanager greetd greetd-tuigreet
         gtk-layer-shell python-gobject python-i3ipc libsecret
-        ttf-jetbrains-mono inter-font noto-fonts-cjk noto-fonts-emoji otf-font-awesome" ;;
+        ttf-jetbrains-mono inter-font noto-fonts-cjk noto-fonts-emoji otf-font-awesome kdeconnect" ;;
     debian) packages="$common golang-go imagemagick sway libnotify-bin pulseaudio-utils network-manager
         greetd tuigreet libpam-gnome-keyring
         gir1.2-gtklayershell-0.1 gir1.2-gtk-3.0 gir1.2-secret-1 python3-gi python3-i3ipc fonts-jetbrains-mono
-        fonts-inter fonts-noto-cjk fonts-noto-color-emoji fonts-font-awesome" ;;
+        fonts-inter fonts-noto-cjk fonts-noto-color-emoji fonts-font-awesome kdeconnect" ;;
 esac
 
 # Keeps only the packages this distro has, and remembers the rest
@@ -124,6 +124,14 @@ say "Building the grayscale icon theme"
 say "VPN (WireGuard, OpenVPN, OpenConnect; the bar's shield)"
 if command -v go >/dev/null; then SUDO=sudo vpn/install-vpn.sh
 else echo "Skipped: Go is not installed"; fi
+
+say "Phone (KDE Connect)"
+# The phone finds this machine on ports 1714-1764; firewalld (Fedora) closes
+# them by default, Arch and Debian ship no firewall
+if command -v firewall-cmd >/dev/null && sudo firewall-cmd --state >/dev/null 2>&1; then
+    sudo firewall-cmd -q --permanent --add-service=kdeconnect
+    sudo firewall-cmd -q --reload
+fi
 
 say "Login screen (greetd + tuigreet)"
 SUDO=sudo greeter/install-greeter.sh

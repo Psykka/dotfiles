@@ -329,7 +329,10 @@ class Card(Gtk.EventBox):
         value = hints.get("value")
         extra = bool(buttons) or value is not None
         if body:
-            b = label(markup(body), use_markup=True)
+            # Pango limits the lines per paragraph, so each "\n" would get
+            # its own lines and push the buttons out of the card: one
+            # paragraph, cut with "…" (U+2028 shows as ↵ where it's cut)
+            b = label(re.sub(r"\s*\n\s*", " ", markup(body).strip()), use_markup=True)
             b.set_line_wrap(True)
             b.set_line_wrap_mode(Pango.WrapMode.WORD_CHAR)
             b.set_lines(1 if extra else 2)

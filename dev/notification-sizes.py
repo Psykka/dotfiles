@@ -113,6 +113,12 @@ def main():
                                        actions=["a", "One"], hints={"value": GLib.Variant("i", 70),
                                                                     "urgency": GLib.Variant("y", 2)})),
         ("critical", lambda: notify("Critical", "Never expires", hints={"urgency": GLib.Variant("y", 2)})),
+        # KDE Connect: the phone app's icon as a picture, its name before the title
+        ("phone", lambda: notify("WhatsApp: Maria", "Are we still on for tonight? " * 4, app="KDE Connect",
+                                 actions=["reply", "Reply"], hints={"image-data": pixels(96, 96),
+                                 "x-kde-reply-placeholder-text": GLib.Variant("s", "Reply to Maria")})),
+        ("lines and buttons", lambda: notify("Pairing", "Pairing request from a phone\nKey: B8D6D280",
+                                             actions=["accept", "Accept", "reject", "Reject"])),
         ("long app name", lambda: notify("App", "Name", app="An application with a really long name")),
     ]
     try:
