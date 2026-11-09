@@ -4,6 +4,8 @@ After=pipewire-pulse.service graphical-session.target
 PartOf=graphical-session.target
 
 [Service]
+# No key yet (or the keyring is locked): skip, not a failure to restart on
+ExecCondition=/bin/sh -c 'secret-tool lookup service soloist key api-key >/dev/null'
 # Named after the machine (%H, the hostname). The API key comes from the
 # keyring, unlocked at login. The WebSocket API (the bar's) only listens on
 # localhost, on a port of the system's choosing: soloist writes it to
