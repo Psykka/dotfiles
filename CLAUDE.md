@@ -64,6 +64,10 @@ user's real volumes or apps. `dev/fake_spotify.py` stands in for
 `spotify.py` in the `spotify` popup (playlists over pages, albums, an
 empty artists page, a search that fails, devices, both logins gone and
 back), so tests never reach the user's Spotify.
+`dev/fake_phone.py` stands in for `phone.py` (KDE Connect) on the `phone`
+popup (notifications over the room, one that can't be dismissed, files
+that fail to open, the phone going away), so tests never ring the
+user's phone.
 
 Content still loading (pictures, lists) shows its skeleton (`Pulse` in
 `panel.py`: a block breathing in @bg2, where the thing will be), never an

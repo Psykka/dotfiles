@@ -15,7 +15,7 @@
     "fixed-center": true,
     "expand-left": true,
     "modules-left": ["group/left", "custom/space#before-media", "mpris", "custom/space#after-media"],
-    "modules-center": ["group/mirror", "clock", "privacy"],
+    "modules-center": ["group/mirror", "group/center", "privacy"],
     "modules-right": ["custom/updates", "group/right"],
 
     // Tux and the workspaces share the left island
@@ -57,11 +57,28 @@
         "on-click-middle": "~/.config/waybar/media-click.sh toggle"
     },
 
+    // The clock's island; the phone joins it, after a line, while one is
+    // around
+    "group/center": {
+        "orientation": "horizontal",
+        "modules": ["clock", "custom/phone"]
+    },
+
     // Date and time. Click: calendar + notifications
     "clock": {
         "format": "{:%a %d %b  %H:%M}",
         "tooltip": false,
         "on-click": "~/.config/waybar/panel.py calendar"
+    },
+
+    // The phone (KDE Connect): an icon while a paired one is reachable, in
+    // the accent color when its battery is low. Click: phone popup
+    "custom/phone": {
+        "exec": "~/.config/waybar/phone.py bar",
+        "return-type": "json",
+        "format": "<span font_size='10pt' rise='-1pt'>{}</span>",
+        "tooltip": false,
+        "on-click": "~/.config/waybar/panel.py phone"
     },
 
     // Pending updates: its own island, only while there are some.
@@ -88,10 +105,17 @@
     },
     // The same, invisible, left of the clock: the center is centered as a
     // whole, so this keeps the clock still when the real one shows up. In a
-    // group so CSS can tell it apart (#mirror)
+    // group so CSS can tell it apart (#mirror). The phone's twin does the
+    // same for the phone icon in the clock's island
     "group/mirror": {
         "orientation": "horizontal",
-        "modules": ["privacy#mirror"]
+        "modules": ["privacy#mirror", "custom/phone#mirror"]
+    },
+    "custom/phone#mirror": {
+        "exec": "~/.config/waybar/phone.py bar",
+        "return-type": "json",
+        "format": "<span font_size='10pt' rise='-1pt'>{}</span>",
+        "tooltip": false
     },
     "privacy#mirror": {
         "icon-size": 13,

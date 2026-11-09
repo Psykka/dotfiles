@@ -19,7 +19,7 @@ window#waybar {
 }
 
 /* notch.svg draws the curved sides (12px each); the middle is plain color */
-#left, #mpris, #clock, #right, #custom-updates, #privacy {
+#left, #mpris, #center, #right, #custom-updates, #privacy {
     background-color: @island;
     background-clip: padding-box;
     border-style: solid;
@@ -61,6 +61,18 @@ window#waybar {
     margin: 8px 3px 8px 0;
     border-right: 1px solid @faint;
 }
+
+/* The phone, after the clock in its island, a short line between them
+   (Spotify's, the other way round). Hidden, waybar keeps the module's box:
+   the room goes only on the visible states, or it would leave a gap */
+#custom-phone { padding: 0; color: @fg; transition: color 150ms ease; }
+#custom-phone.on, #custom-phone.low {
+    padding: 0 1px 0 9px;
+    margin: 8px 0 8px 9px;
+    border-left: 1px solid @faint;
+}
+#custom-phone.low { color: @accent; }
+#custom-phone:hover { color: @hi; }
 
 #custom-space-before-media, #custom-space-after-media { background: transparent; }
 

@@ -17,8 +17,9 @@ The popups really open, on the focused display. The media one plays the
 pretend player (dev/fake-player.py) and leaves any real one alone; the
 Bluetooth one has pretend devices (dev/fake_bluetooth.py), the sound
 one a pretend sound server (dev/fake_audio.py) and the VPN one a pretend
-daemon (dev/fake_vpn.py), and the Spotify one a pretend Spotify
-(dev/fake_spotify.py) with the pretend player. The
+daemon (dev/fake_vpn.py), the Spotify one a pretend Spotify
+(dev/fake_spotify.py) with the pretend player, and the phone one a
+pretend phone (dev/fake_phone.py). The
 wallpaper one tries a wallpaper already downloaded on the desktop, then
 discards it: nothing is saved; its saved themes are pretend ones in a
 folder of their own ($THEME_SAVED), gone at the end. Not a stow package: nothing here is linked
@@ -241,6 +242,23 @@ def steps(mode):
             (800, "turn on", lambda m: m.bluetooth.switch.set_active(True), False),
             (1000, "end", lambda _: None, False),
         ]
+    if mode == "phone":
+        # With the pretend phone (fake_phone.py), set up in run()
+        import fake_phone as fake
+        return [
+            (0, "ring", lambda p: p.act("ring"), False),
+            (800, "send the clipboard", lambda p: p.act("clipboard"), False),
+            (800, "open its files, and fail", lambda p: p.act("files"), False),
+            (1500, "dismiss one", lambda p: p.dismiss(p.rows["1"].note), False),
+            (800, "a new one", lambda _: fake.post(id="9", app="Signal", title="Ana", text="On my way"), False),
+            (800, "low battery, unplugged", lambda _: fake.set_state(battery=12, charging=False, network=None), False),
+            (800, "all gone", lambda _: fake.clear(), False),
+            (800, "out of reach", lambda _: fake.set_state(reachable=False), False),
+            (800, "back", lambda _: fake.set_state(reachable=True), False),
+            (800, "unpaired", lambda _: fake.set_state(paired=False), False),
+            (800, "paired again", lambda _: fake.set_state(paired=True), False),
+            (1000, "end", lambda _: None, False),
+        ]
     if mode == "vpn":
         # With the pretend VPN daemon (fake_vpn.py), set up in run()
         import fake_vpn as fake
@@ -371,7 +389,7 @@ def name_entry(w):
     return next(c for c in w.bar.get_children() if isinstance(c, Gtk.Entry))
 
 
-MODES = ("wallpaper", "menu", "sound", "bluetooth", "vpn", "calendar", "media", "spotify")
+MODES = ("wallpaper", "menu", "sound", "bluetooth", "vpn", "calendar", "media", "spotify", "phone")
 
 
 def run(mode, shots):
@@ -400,6 +418,10 @@ def run(mode, shots):
         import fake_spotify
         panel.spotify = fake_spotify
         panel.SPOTIFY_PLAYERCTL = ["playerctl", "-p", "fakeplayer"]
+    if mode == "phone":
+        sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+        import fake_phone
+        panel.phone = fake_phone
     if mode in ("vpn", "menu"):
         sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
         import fake_vpn

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Bar popups: mini media player, Spotify, calendar + notifications, general
-menu, sound, displays, bluetooth, vpn, wallpaper.
+menu, sound, displays, bluetooth, vpn, wallpaper, phone.
 
-Usage: panel.py media|spotify|calendar|menu|network|updates|sound|displays|bluetooth|vpn|wallpaper
+Usage: panel.py media|spotify|calendar|menu|network|updates|sound|displays|bluetooth|vpn|wallpaper|phone
        panel.py spotify [search]  the Spotify mini client (on its search)
 Running it again with the same mode closes it; another mode replaces it.
 """
@@ -26,6 +26,7 @@ import gi
 import audio
 import bluetooth
 import displays
+import phone
 import spotify
 import vpn
 import wallpaper
@@ -63,7 +64,7 @@ ICON = {
     "moon": "\uf186", "sun": "\uf185",
     "heart": "\uf004", "list": "\uf03a", "disc": "\uf51f", "user": "\uf007", "tv": "\uf26c",
     "book": "\uf02d", "search": "\uf002", "gear": "\uf013", "shuffle": "\uf074", "repeat": "\uf363",
-    "queue": "\uf0cb", "external": "\uf35d",
+    "queue": "\uf0cb", "external": "\uf35d", "bell": "\uf0f3", "folder": "\uf07b", "clipboard": "\uf328",
 }
 
 CSS = b"""
@@ -212,6 +213,9 @@ entry.search { background: @bg2; color: @fg; border: none; border-radius: 4px; b
 entry.search image { color: @mute; }
 /* In the wallpaper panel's bottom bar: no taller than its buttons */
 entry.search.in-bar { padding: 2px 8px; min-height: 0; }
+
+/* A phone notification without its app's picture: the app's initial */
+.initial { background: @line; border-radius: 4px; color: @fg; font-weight: bold; font-size: 12px; }
 
 .today-big { color: @hi; font-size: 18px; font-weight: bold; }
 .month { color: @hi; }
@@ -2971,6 +2975,245 @@ class Bluetooth(Gtk.Box):
         row.ask(kind, code, reply)
 
 
+# ------------------------------------------------------------------- phone
+
+FILES = os.path.expanduser("~/.local/bin/files")
+
+
+class PhoneNote(Gtk.Box):
+    """One of the phone's notifications, as a card of a fixed height: its
+    app's picture (or initial), title and a line of text, and a way to
+    dismiss it on the phone. The dismiss button keeps its room even on the
+    ones the phone won't let go."""
+
+    HEIGHT = 48
+    PICTURE = 28
+
+    def __init__(self, on_dismiss):
+        super().__init__(spacing=10)
+        css(self, "device-card")
+        self.set_size_request(-1, self.HEIGHT)
+        self.note = None
+        self.slot = Gtk.Stack(homogeneous=True, margin_start=10, valign=Gtk.Align.CENTER)
+        self.slot.set_size_request(self.PICTURE, self.PICTURE)
+        self.picture = Gtk.Image()
+        self.slot.add_named(self.picture, "picture")
+        self.initial = label(css=["initial"], xalign=0.5)
+        self.slot.add_named(self.initial, "initial")
+        self.pack_start(self.slot, False, False, 0)
+        names = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, valign=Gtk.Align.CENTER)
+        top = Gtk.Box(spacing=8)
+        self.title = label(css=["device-title"], ellipsize=True)
+        self.app = label(css=["muted", "small"], xalign=1.0, ellipsize=True)
+        self.app.set_max_width_chars(12)
+        top.pack_start(self.title, True, True, 0)
+        top.pack_end(self.app, False, False, 0)
+        names.pack_start(top, False, False, 0)
+        self.text = label(css=["muted", "small"], ellipsize=True)
+        names.pack_start(self.text, False, False, 0)
+        self.pack_start(names, True, True, 0)
+        self.close = icon_button("offline", css=["device-side"], on_click=lambda: on_dismiss(self.note))
+        self.close.set_tooltip_text(tr("phone.dismiss"))
+        self.pack_end(self.close, False, False, 0)
+
+    def update(self, n):
+        self.note = n
+        self.title.set_text(n["title"] or n["app"])
+        self.app.set_text(n["app"] if n["title"] else "")
+        # One line: the phone sends chats with line breaks
+        self.text.set_text(" ".join(n["text"].split()))
+        pix = None
+        if n["picture"]:
+            try:
+                pix = GdkPixbuf.Pixbuf.new_from_file_at_scale(n["picture"], self.PICTURE, self.PICTURE, True)
+            except GLib.Error:
+                pix = None
+        if pix:
+            self.picture.set_from_pixbuf(pix)
+        self.initial.set_text((n["app"] or n["title"] or "?")[:1].upper())
+        self.slot.set_visible_child_name("picture" if pix else "initial")
+        # Kept in its place, only out of reach
+        self.close.set_sensitive(n["dismissable"])
+        self.close.set_opacity(1 if n["dismissable"] else 0)
+
+
+class Phone(Gtk.Box):
+    """The phone popup, from its icon next to the clock (KDE Connect,
+    phone.py): its battery, ring it, open its files, send it the clipboard,
+    and the notifications on its screen.
+
+    Everything has its room from the start: the actions' answer goes in a
+    line kept under them, the notifications in a room of a fixed height
+    (it scrolls past that), and a phone that goes away is a word in the
+    same room as the whole page."""
+
+    ROWS = 4  # whole notification cards that fit before scrolling
+
+    def __init__(self):
+        super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        self.set_size_request(340, -1)
+        self.phone = None
+        self.queued = False
+        self.rows = {}  # notification id: PhoneNote
+        self.note_timer = None
+
+        self.pack_start(label(tr("phone.heading"), ["heading"]), False, False, 0)
+        page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+
+        card = css(Gtk.Box(spacing=12), "device-card", "asking")
+        card.set_size_request(-1, 52)
+        card.pack_start(label(ICON["phone"], ["icon", "today-big"], xalign=0.5, width=2), False, False, 0)
+        names = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, valign=Gtk.Align.CENTER)
+        self.name = label(css=["device-title"], ellipsize=True)
+        self.status = label(css=["muted", "small"], ellipsize=True)
+        names.pack_start(self.name, False, False, 0)
+        names.pack_start(self.status, False, False, 0)
+        card.pack_start(names, True, True, 0)
+        page.pack_start(card, False, False, 0)
+
+        tiles = Gtk.Box(spacing=8, homogeneous=True)
+        self.tiles = {}
+        for key, icon, words in (("ring", "bell", tr("phone.ring")), ("files", "folder", tr("phone.files")),
+                                 ("clipboard", "clipboard", tr("phone.clipboard"))):
+            b = css(Gtk.Button(), "tile")
+            inner = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+            inner.pack_start(label(ICON[icon], ["icon"], xalign=0.5), False, False, 0)
+            inner.pack_start(label(words, ["small"], xalign=0.5, ellipsize=True), False, False, 0)
+            b.add(inner)
+            b.connect("clicked", lambda _, k=key: self.act(k))
+            tiles.pack_start(b, True, True, 0)
+            self.tiles[key] = b
+        page.pack_start(tiles, False, False, 0)
+        # What the last action did; a line always there, empty or not
+        said = Gtk.Box(spacing=8)
+        self.spinner = Spinner()
+        said.pack_start(self.spinner, False, False, 0)
+        self.said = label(" ", ["muted", "small"], ellipsize=True)
+        said.pack_start(self.said, True, True, 0)
+        page.pack_start(said, False, False, 0)
+
+        page.pack_start(label(tr("phone.notifications"), ["heading"]), False, False, 0)
+        self.list = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        self.empty = label(tr("phone.no-notifications"), ["muted", "small"])
+        # Shown by refresh() alone: the window's show_all would bring it back
+        self.empty.set_no_show_all(True)
+        self.list.pack_start(self.empty, False, False, 0)
+        scroll = Gtk.ScrolledWindow()
+        scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        scroll.add(self.list)
+        height = self.ROWS * (PhoneNote.HEIGHT + 4)
+        scroll.set_min_content_height(height)
+        scroll.set_max_content_height(height)
+        page.pack_start(scroll, False, False, 0)
+
+        # No phone around: a word in the room of the whole page
+        away = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6, valign=Gtk.Align.CENTER)
+        away.pack_start(label(ICON["phone"], ["icon", "today-big", "muted"], xalign=0.5), False, False, 0)
+        self.away_title = label(css=["title"], xalign=0.5, ellipsize=True)
+        self.away_hint = label(css=["muted", "small"], xalign=0.5)
+        self.away_hint.set_line_wrap(True)
+        self.away_hint.set_justify(Gtk.Justification.CENTER)
+        self.away_hint.set_max_width_chars(36)
+        away.pack_start(self.away_title, False, False, 0)
+        away.pack_start(self.away_hint, False, False, 0)
+        self.room = Gtk.Stack(homogeneous=True, transition_type=Gtk.StackTransitionType.CROSSFADE)
+        self.room.add_named(page, "on")
+        self.room.add_named(away, "away")
+        self.pack_start(self.room, False, False, 0)
+
+        phone.watch(self.changed)
+        self.room.show_all()
+        self.refresh()
+
+    def changed(self):
+        # A notification, the battery and the like come several at once
+        if not self.queued:
+            self.queued = True
+            GLib.timeout_add(300, self.refresh)
+
+    def refresh(self):
+        self.queued = False
+        d = self.phone = phone.device()
+        if not d or not d["reachable"]:
+            self.away_title.set_text(tr("phone.away", name=d["name"]) if d else tr("phone.none"))
+            self.away_hint.set_text(tr("phone.away-hint") if d else tr("phone.none-hint"))
+            self.room.set_visible_child_name("away")
+            return False
+        self.room.set_visible_child_name("on")
+        self.name.set_text(d["name"])
+        self.status.set_text(self.status_text(d))
+
+        notes = phone.notifications(d["id"])
+        self.empty.set_visible(not notes)
+        keep = set()
+        for i, n in enumerate(notes):
+            row = self.rows.get(n["id"])
+            if not row:
+                row = self.rows[n["id"]] = PhoneNote(self.dismiss)
+                row.show_all()
+                self.list.pack_start(row, False, False, 0)
+            self.list.reorder_child(row, i + 1)
+            row.update(n)
+            keep.add(n["id"])
+        for nid in set(self.rows) - keep:
+            self.list.remove(self.rows.pop(nid))
+        return False
+
+    def status_text(self, d):
+        if d["battery"] is None:
+            words = tr("phone.connected")
+        else:
+            words = (tr("phone.charging", charge=d["battery"]) if d["charging"]
+                     else tr("phone.battery", charge=d["battery"]))
+        if d["network"]:
+            words += tr("phone.network", network=d["network"])
+        return words
+
+    # ------------------------------------------------------------- actions
+
+    def say(self, text, busy=False):
+        """The line under the actions; it empties itself after a while."""
+        (self.spinner.start if busy else self.spinner.stop)()
+        self.said.set_text(text or " ")
+        css(self.said, "error", on=False)
+        if self.note_timer:
+            GLib.source_remove(self.note_timer)
+            self.note_timer = None
+        if text and not busy:
+            self.note_timer = GLib.timeout_add(4000, lambda: self.say(None) or False)
+        return self.said
+
+    def act(self, key):
+        d = self.phone
+        if not d:
+            return
+        if key == "ring":
+            phone.ring(d["id"])
+            self.say(tr("phone.ringing", name=d["name"]))
+        elif key == "clipboard":
+            phone.send_clipboard(d["id"])
+            self.say(tr("phone.clipboard-sent"))
+        elif key == "files":
+            self.tiles["files"].set_sensitive(False)
+            self.say(tr("phone.opening-files"), busy=True)
+            phone.browse(d["id"], self.browsed)
+
+    def browsed(self, folder, error):
+        self.tiles["files"].set_sensitive(True)
+        if folder:
+            self.say(None)
+            spawn(FILES, folder)
+            top = self.get_toplevel()
+            top.close() if hasattr(top, "revealer") else Gtk.main_quit()
+            return
+        css(self.say(tr("phone.files-failed", reason=error)), "error")
+
+    def dismiss(self, n):
+        if self.phone and n:
+            phone.dismiss(self.phone["id"], n["id"])
+            self.changed()
+
+
 # --------------------------------------------------------------------- VPN
 
 def vpn_kind(p):
@@ -5237,7 +5480,7 @@ class Panel(Gtk.Window):
         frame.get_style_context().add_class("panel")
         self.content = (Menu(mode) if mode in ("sound", "displays", "bluetooth", "vpn") else
                         {"media": Media, "spotify": Spotify, "calendar": Calendar, "menu": Menu, "network": Network, "updates": Updates,
-                         "wallpaper": Wallpapers}[mode]())
+                         "wallpaper": Wallpapers, "phone": Phone}[mode]())
         frame.add(self.content)
         # Slides down from the bar when it opens, and back up when it closes
         self.revealer = Gtk.Revealer(transition_type=Gtk.RevealerTransitionType.SLIDE_DOWN,
@@ -5326,7 +5569,8 @@ def restyle():
     STYLE.load_from_data(colors + CSS)
 
 
-MODES = ("media", "spotify", "calendar", "menu", "network", "updates", "sound", "displays", "bluetooth", "vpn", "wallpaper")
+MODES = ("media", "spotify", "calendar", "menu", "network", "updates", "sound", "displays", "bluetooth", "vpn", "wallpaper",
+         "phone")
 
 
 def main():
