@@ -95,11 +95,16 @@ exec sh -c 'for a in /usr/libexec/polkit-mate-authentication-agent-1 /usr/lib/ma
 
 # Lock: Super+L, or automatically after 20 min (never suspends). The
 # screens go dark 30 s into a lock and wake on any key or move; checking
-# for gtklock keeps them on while unlocked. Before any sleep (closing the
-# lid suspends, through logind) it locks too, so it wakes up locked; -w
-# holds the suspend until the lock is up, and an existing one is kept
+# for gtklock keeps them on while unlocked. Before any sleep (from the
+# menu) it locks too, so it wakes up locked; -w holds the suspend until
+# the lock is up, and an existing one is kept.
+# Closing the lid only locks, never suspends: swayidle runs under a
+# handle-lid-switch inhibitor (no root, gone with the session), so logind
+# leaves the lid to sway
 bindsym $mod+l exec lock
-exec swayidle -w \
+bindswitch lid:on exec pgrep -x gtklock >/dev/null || lock
+exec systemd-inhibit --what=handle-lid-switch --who=sway --why="Closing the lid locks the screen" \
+    swayidle -w \
     timeout 30 'pgrep -x gtklock >/dev/null && swaymsg "output * power off"' resume 'swaymsg "output * power on"' \
     timeout 1200 lock \
     timeout 1230 'swaymsg "output * power off"' resume 'swaymsg "output * power on"' \
